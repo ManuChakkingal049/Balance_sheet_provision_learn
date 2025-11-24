@@ -58,19 +58,26 @@ def compute_pnl(s):
     }
 
 # --- Balance Sheet Builder ---
-def build_bs(state, pnl, base_re=None, is_base=False):
-    if base_re is None:
-        base_re = state["retained_earnings"]
-
-    # For base case, use existing allowance; for scenario, add provision
+def build_bs(state, pnl, base_state=None, is_base=False):
+    # For base case: use current state values as-is (no P&L impact)
+    # For scenario: start from base state, apply the P&L changes
+    
     if is_base:
+        # Base case: just show the current balance sheet state
         new_allowance = state["allowance"]
         new_tax_payable = state["accrued_tax_payable"]
         new_retained = state["retained_earnings"]
     else:
-        new_allowance = state["allowance"] + pnl["Provision Expense"]
-        new_tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
-        new_retained = base_re + pnl["Net Income"]
+        # Scenario case: apply P&L impacts to the base state
+        if base_state is None:
+            base_state = state
+        
+        # Start with base allowance, add the NEW provision from scenario
+        new_allowance = base_state["allowance"] + pnl["Provision Expense"]
+        # Start with base tax payable, add the NEW tax from scenario
+        new_tax_payable = base_state["accrued_tax_payable"] + pnl["Tax Expense"]
+        # Start with base retained earnings, add the NEW net income from scenario
+        new_retained = base_state["retained_earnings"] + pnl["Net Income"]
     
     net_loans = state["gross_loans"] - new_allowance
 
@@ -133,7 +140,7 @@ if apply:
         "provision_expense": provision, "interest_expense": non_interest_exp, "tax_rate": tax_rate
     })
     scenario_pnl = compute_pnl(temp)
-    scenario_bs = build_bs(temp, scenario_pnl, st.session_state.state["retained_earnings"])
+    scenario_bs = build_bs(temp, scenario_pnl, base_state=st.session_state.state, is_base=False)
 else:
     scenario_bs = base_bs
 
