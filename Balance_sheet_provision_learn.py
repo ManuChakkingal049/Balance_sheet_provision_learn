@@ -108,7 +108,7 @@ def generate_dynamic_explanation(pnl_base, pnl_scn):
 # -----------------------------
 # Two Columns for Base and Scenario Inputs
 # -----------------------------
-st.title("Bank P&L impact on Balance Sheet")
+st.title("Bank P&L → Balance Sheet What-If")
 
 col_base, col_scn = st.columns(2)
 
@@ -143,15 +143,24 @@ bs_base = build_bs(st.session_state.state, pnl_base)
 bs_scn = build_bs(st.session_state.state, pnl_scn)
 
 # -----------------------------
-# P&L side-by-side table
+# P&L side-by-side table with delta
 # -----------------------------
 def create_pnl_comparison(pnl_base, pnl_scn):
     items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
-    data = {"Item":[], "Base":[], "Scenario":[]}
+    data = {"Item":[], "Base":[], "Scenario":[],"Change":[]}  # added Change column
     for item in items:
         data["Item"].append(item)
-        data["Base"].append(pnl_base[item])
-        data["Scenario"].append(pnl_scn[item])
+        base_val = pnl_base[item]
+        scn_val = pnl_scn[item]
+        data["Base"].append(base_val)
+        data["Scenario"].append(scn_val)
+        diff = scn_val - base_val
+        if diff > 0:
+            data["Change"].append(f"(+) {fmt(diff)}")
+        elif diff < 0:
+            data["Change"].append(f"(-) {fmt(-diff)}")
+        else:
+            data["Change"].append("0")
     df = pd.DataFrame(data)
     return df.style.format({"Base":"{0:,.0f}", "Scenario":"{0:,.0f}"}).hide(axis="index")
 
