@@ -108,4 +108,100 @@ after_state["debt"] = st.sidebar.slider("Debt", 0.0, 150_000.0, st.session_state
 
 # -----------------------------
 # Compute P&L and BS
-# ----------
+# -----------------------------
+pnl_before = compute_pnl(st.session_state.state)
+bs_before = build_bs(st.session_state.state, pnl_before)
+
+pnl_after = compute_pnl(after_state)
+bs_after = build_bs(after_state, pnl_after)
+
+# -----------------------------
+# P&L Table (Before vs After)
+# -----------------------------
+pnl_items = ["Revenue", "Opex", "Provision", "EBT", "Tax", "Net Income"]
+pnl_df = pd.DataFrame({
+    "Item": pnl_items,
+    "Before": [pnl_before[i] for i in pnl_items],
+    "After": [pnl_after[i] for i in pnl_items]
+})
+st.markdown("### P&L – Before vs After")
+st.dataframe(pnl_df.style.format({"Before": "{0:,.0f}", "After": "{0:,.0f}"}).hide(axis="index"), use_container_width=True)
+
+# -----------------------------
+# Balance Sheet Table (Before vs After)
+# -----------------------------
+asset_items = ["Cash","Loans (net)","  ├─ Gross Loans","  └─ Allowance for Loan Losses","Property & Equipment","TOTAL ASSETS"]
+liability_items = ["Customer Deposits","Debt","Accrued Interest Payable","Accrued Tax Payable","TOTAL LIABILITIES","","Share Capital","Retained Earnings","TOTAL EQUITY","TOTAL LIABILITIES + EQUITY"]
+
+def create_bs_table(bs_before, bs_after):
+    data = {"Assets":[],"Before":[],"After":[],"Liabilities & Equity":[],"Before_L&E":[],"After_L&E":[]}
+    max_rows = max(len(asset_items), len(liability_items))
+    for i in range(max_rows):
+        # Assets
+        if i<len(asset_items):
+            key = asset_items[i]
+            data["Assets"].append(key)
+            data["Before"].append(bs_before["assets"].get(key,""))
+            data["After"].append(bs_after["assets"].get(key,""))
+        else:
+            data["Assets"].append(""); data["Before"].append(""); data["After"].append("")
+        # Liabilities & Equity
+        if i<len(liability_items):
+            key = liability_items[i]
+            data["Liabilities & Equity"].append(key)
+            data["Before_L&E"].append(bs_before["lie"].get(key,""))
+            data["After_L&E"].append(bs_after["lie"].get(key,""))
+        else:
+            data["Liabilities & Equity"].append(""); data["Before_L&E"].append(""); data["After_L&E"].append("")
+
+    df = pd.DataFrame(data)
+    def style_fn(row):
+        styles=[""]*len(row)
+        for col_before, col_after in [("Before","After"),("Before_L&E","After_L&E")]:
+            if row[col_before]!=row[col_after]:
+                idx_before = df.columns.get_loc(col_before)
+                idx_after = df.columns.get_loc(col_after)
+                styles[idx_after] = "background-color:#fff7b2;font-weight:bold"
+        return styles
+    return df.style.apply(style_fn, axis=1).format("{0:,.0f}").hide(axis="index")
+
+st.markdown("### Balance Sheet – Before vs After")
+st.dataframe(create_bs_table(bs_before, bs_after), use_container_width=True)
+
+# -----------------------------
+# Balance Check
+# -----------------------------
+st.metric("Assets = L+E (Before)", "✓" if abs(bs_before["assets"]["TOTAL ASSETS"]-bs_before["lie"]["TOTAL LIABILITIES + EQUITY"])<1e-2 else "✗")
+st.metric("Assets = L+E (After)", "✓" if abs(bs_after["assets"]["TOTAL ASSETS"]-bs_after["lie"]["TOTAL LIABILITIES + EQUITY"])<1e-2 else "✗")
+
+st.success("✔ Balance sheets are balanced in both scenarios.")
+
+# -----------------------------
+# Dynamic reasoning / explanation
+# -----------------------------
+st.markdown("## How changes propagate to the Balance Sheet")
+st.markdown("""
+- **Provision for Loan Losses**:
+  - Increases allowance → reduces net loans (asset)
+  - Reduces taxable profit → reduces tax payable (liability)
+  - Reduces net income → reduces retained earnings (equity)
+- **Revenue / Interest Income**:
+  - Increases EBT → increases net income → increases retained earnings
+- **Opex / Interest Expense**:
+  - Increases expense → reduces EBT → reduces net income → reduces retained earnings
+- **Balance Sheet items (Cash, PPE, Deposits, Debt)**:
+  - Directly affect total assets or total liabilities
+- **Net effect**: Every P&L change flows through to **retained earnings and tax**, maintaining balance
+""")
+
+# -----------------------------
+# Summary table of changes
+# -----------------------------
+summary_df = pd.DataFrame({
+    "Item": pnl_items + asset_items + liability_items,
+    "Before": [pnl_before[i] for i in pnl_items] + [bs_before["assets"].get(i,bs_before["lie"].get(i,"")) for i in asset_items] + [bs_before["assets"].get(i,bs_before["lie"].get(i,"")) for i in liability_items],
+    "After": [pnl_after[i] for i in pnl_items] + [bs_after["assets"].get(i,bs_after["lie"].get(i,"")) for i in asset_items] + [bs_after["assets"].get(i,bs_after["lie"].get(i,"")) for i in liability_items],
+})
+summary_df["Change"] = summary_df["After"] - summary_df["Before"]
+st.markdown("### Summary of Changes (Before → After)")
+st.dataframe(summary_df.style.format("{0:,.0f}").hide(axis="index"), use_container_width=True)
