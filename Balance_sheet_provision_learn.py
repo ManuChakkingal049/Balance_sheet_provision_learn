@@ -120,19 +120,29 @@ ranges = {
     "Tax Rate": (0.0, 0.50, 0.01)
 }
 
-# Sliders in two columns
 cols_base = []
 cols_scn = []
 
-st.markdown("### P&L Input Sliders")
+st.markdown("### P&L Input Sliders (Base vs Scenario)")
+
 for item in pnl_items:
     c1, c2 = st.columns([1,1])
-    if item != "Tax Rate":
-        base_val = c1.slider(f"{item} (Base)", *ranges[item], 0 if item=="Provision" else ranges[item][1]//2, step=ranges[item][2])
-        scn_val = c2.slider(f"{item} (Scenario)", *ranges[item], 0 if item=="Provision" else ranges[item][1]//2, step=ranges[item][2])
+    min_val, max_val, step = ranges[item]
+
+    # Determine defaults safely
+    if item == "Provision":
+        default_base = 0
+        default_scn = 0
+    elif item == "Tax Rate":
+        default_base = 0.25
+        default_scn = 0.25
     else:
-        base_val = c1.slider(f"{item} (Base)", *ranges[item], 0.25, step=ranges[item][2])
-        scn_val = c2.slider(f"{item} (Scenario)", *ranges[item], 0.25, step=ranges[item][2])
+        default_base = (min_val + max_val)/2
+        default_scn = (min_val + max_val)/2
+
+    base_val = c1.slider(f"{item} (Base)", min_val, max_val, default_base, step=step)
+    scn_val = c2.slider(f"{item} (Scenario)", min_val, max_val, default_scn, step=step)
+
     cols_base.append(base_val)
     cols_scn.append(scn_val)
 
