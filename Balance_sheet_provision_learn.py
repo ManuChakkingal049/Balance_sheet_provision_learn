@@ -5,13 +5,19 @@ from copy import deepcopy
 st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If")
 
 # --- Initial Balanced Position (Bank-like) ---
+# Starting with a clean, balanced balance sheet
+# Assets: Cash 50k + Net Loans 395k (400k - 5k allowance) + PPE 30k = 475k
+# Liabilities: Deposits 300k + Debt 80k = 380k
+# Equity: Share Capital 50k + Retained Earnings 45k = 95k
+# Total L+E: 380k + 95k = 475k ✓ BALANCED
+
 DEFAULTS = {
     "revenue": 120_000.0,           # Interest income
     "cogs": 45_000.0,               # Interest expense / funding cost
     "opex": 25_000.0,
     "interest_expense": 3_000.0,     # Non-interest expense
     "tax_rate": 0.25,
-    "provision_expense": 2_000.0,    # Loan loss provision
+    "provision_expense": 0.0,        # Start with zero provision (no P&L impact initially)
 
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
@@ -21,8 +27,8 @@ DEFAULTS = {
     "deposits": 300_000.0,           # Customer deposits
     "debt": 80_000.0,
     "accrued_tax_payable": 0.0,
-    "share_capital": 100_000.0,
-    "retained_earnings": 70_000.0,   # Ensures balance at start
+    "share_capital": 50_000.0,
+    "retained_earnings": 45_000.0,   # Calculated to balance: 475k - 380k - 50k = 45k
 }
 
 if "state" not in st.session_state:
