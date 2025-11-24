@@ -13,15 +13,12 @@ DEFAULTS = {
     "opex": 25_000.0,
     "interest_expense": 3_000.0,
     "tax_rate": 0.25,
-
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
     "ppe": 30_000.0,
-
     "deposits": 300_000.0,
     "debt": 80_000.0,
     "accrued_interest_payable": 3_000.0,
-
     "share_capital": 50_000.0,
 }
 
@@ -32,7 +29,7 @@ def fmt(x):
     return f"{x:,.0f}"
 
 # -----------------------------
-# P&L computation
+# Compute P&L
 # -----------------------------
 def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
     net_interest_income = revenue - cogs
@@ -40,18 +37,24 @@ def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
     ebt = operating_income - interest_expense
     tax = ebt * tax_rate
     net_income = ebt - tax
-    return {"Revenue": revenue, "Opex": opex, "Interest Expense": interest_expense,
-            "Provision": provision, "EBT": ebt, "Tax": tax, "Net Income": net_income,
-            "Tax Rate": tax_rate}
+    return {
+        "Revenue": revenue,
+        "Opex": opex,
+        "Interest Expense": interest_expense,
+        "Provision": provision,
+        "EBT": ebt,
+        "Tax": tax,
+        "Net Income": net_income,
+        "Tax Rate": tax_rate
+    }
 
 # -----------------------------
-# Build balance sheet
+# Build Balance Sheet
 # -----------------------------
 def build_bs(state, pnl):
     allowance = pnl["Provision"]
     tax_payable = pnl["Tax"]
     retained_earnings = pnl["Net Income"]
-
     net_loans = state["gross_loans"] - allowance
     total_assets = state["cash"] + net_loans + state["ppe"]
     total_liabilities = state["deposits"] + state["debt"] + state["accrued_interest_payable"] + tax_payable
@@ -65,7 +68,6 @@ def build_bs(state, pnl):
         "Property & Equipment": state["ppe"],
         "TOTAL ASSETS": total_assets,
     }
-
     lie = {
         "Customer Deposits": state["deposits"],
         "Debt": state["debt"],
@@ -78,37 +80,35 @@ def build_bs(state, pnl):
         "TOTAL EQUITY": total_equity,
         "TOTAL LIABILITIES + EQUITY": total_liabilities + total_equity,
     }
-
     return {"assets": assets, "lie": lie}
 
 # -----------------------------
-# Dynamic Explanation Generator
+# P&L Comparison with Signs
 # -----------------------------
-def generate_dynamic_explanation(pnl_base, pnl_scn):
-    explanation = []
-    def change_word(diff):
-        return "increases" if diff > 0 else "reduces" if diff < 0 else "does not change"
-    diff = pnl_scn["Revenue"] - pnl_base["Revenue"]
-    explanation.append(f"- Revenue: {fmt(pnl_base['Revenue'])} → {fmt(pnl_scn['Revenue'])}, {change_word(diff)} EBT & Net Income → Retained Earnings.")
-    diff = pnl_scn["Opex"] - pnl_base["Opex"]
-    explanation.append(f"- Opex: {fmt(pnl_base['Opex'])} → {fmt(pnl_scn['Opex'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
-    diff = pnl_scn["Interest Expense"] - pnl_base["Interest Expense"]
-    explanation.append(f"- Interest Expense: {fmt(pnl_base['Interest Expense'])} → {fmt(pnl_scn['Interest Expense'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
-    diff = pnl_scn["Provision"] - pnl_base["Provision"]
-    explanation.append(f"- Provision: {fmt(pnl_base['Provision'])} → {fmt(pnl_scn['Provision'])}, {change_word(-diff)} Net Loans (asset), {change_word(-diff)} EBT & Net Income → Retained Earnings, affects Tax Payable.")
-    diff = pnl_scn["Tax Rate"] - pnl_base["Tax Rate"]
-    explanation.append(f"- Tax Rate: {pnl_base['Tax Rate']:.2%} → {pnl_scn['Tax Rate']:.2%}, {change_word(diff)} Tax Expense → affects Net Income & Retained Earnings.")
-    explanation.append("\n**Balance Sheet Impact:**")
-    explanation.append("- Assets change due to Net Loans / Allowance.")
-    explanation.append("- Liabilities change due to Tax Payable.")
-    explanation.append("- Equity changes due to Net Income / Retained Earnings.")
-    explanation.append("- Total Assets = Total Liabilities + Equity remains balanced.")
-    return "\n".join(explanation)
+def create_pnl_comparison(pnl_base, pnl_scn):
+    items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
+    data = {"Item":[], "Base":[], "Scenario":[]}
+    for item in items:
+        # Determine sign relative to Revenue top-line
+        if item == "Revenue":
+            s_base = "(+)"
+            s_scn = "(+)"
+        elif item in ["Opex","Interest Expense","Provision","Tax"]:
+            s_base = "(-)"
+            s_scn = "(-)"
+        else: # EBT, Net Income
+            s_base = "(=)"
+            s_scn = "(=)"
+        data["Item"].append(f"{item} {s_base}")
+        data["Base"].append(fmt(pnl_base[item]))
+        data["Scenario"].append(fmt(pnl_scn[item]))
+    df = pd.DataFrame(data)
+    return df.style.hide(axis="index")
 
 # -----------------------------
-# Two Columns for Base and Scenario Inputs
+# Input sliders for Base vs Scenario
 # -----------------------------
-st.title("Bank P&L → Balance Sheet What-If")
+st.title("Bank P&L impact on Balance Sheet")
 
 col_base, col_scn = st.columns(2)
 
@@ -137,38 +137,19 @@ pnl_base = compute_pnl(revenue_base, st.session_state.state["cogs"], opex_base, 
 pnl_scn = compute_pnl(revenue_scn, st.session_state.state["cogs"], opex_scn, interest_scn, provision_scn, tax_rate_scn)
 
 # -----------------------------
-# Build balance sheets
+# Build Balance Sheets
 # -----------------------------
 bs_base = build_bs(st.session_state.state, pnl_base)
 bs_scn = build_bs(st.session_state.state, pnl_scn)
 
 # -----------------------------
-# P&L side-by-side table with delta
+# Display P&L Comparison with Signs
 # -----------------------------
-def create_pnl_comparison(pnl_base, pnl_scn):
-    items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
-    data = {"Item":[], "Base":[], "Scenario":[],"Change":[]}  # added Change column
-    for item in items:
-        data["Item"].append(item)
-        base_val = pnl_base[item]
-        scn_val = pnl_scn[item]
-        data["Base"].append(base_val)
-        data["Scenario"].append(scn_val)
-        diff = scn_val - base_val
-        if diff > 0:
-            data["Change"].append(f"(+) {fmt(diff)}")
-        elif diff < 0:
-            data["Change"].append(f"(-) {fmt(-diff)}")
-        else:
-            data["Change"].append("0")
-    df = pd.DataFrame(data)
-    return df.style.format({"Base":"{0:,.0f}", "Scenario":"{0:,.0f}"}).hide(axis="index")
-
-st.markdown("### P&L Comparison – Base vs Scenario")
+st.markdown("### P&L Comparison – Base vs Scenario (with + / − / = signs)")
 st.dataframe(create_pnl_comparison(pnl_base, pnl_scn), use_container_width=True)
 
 # -----------------------------
-# Retained earnings
+# Retained Earnings
 # -----------------------------
 st.write(f"**Retained Earnings – Base:** {fmt(bs_base['lie']['Retained Earnings'])}")
 st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scn['lie']['Retained Earnings'])}")
@@ -217,7 +198,18 @@ st.dataframe(create_bs_table(bs_scn, bs_base), use_container_width=True)
 # -----------------------------
 # Dynamic Explanation
 # -----------------------------
+def generate_dynamic_explanation_full(pnl_base, pnl_scn):
+    explanation = []
+    def change_word(diff):
+        return "increases" if diff > 0 else "reduces" if diff < 0 else "does not change"
+    for key in ["Revenue","Opex","Interest Expense","Provision","Tax Rate"]:
+        diff = pnl_scn[key] - pnl_base[key]
+        explanation.append(f"- {key}: {fmt(pnl_base[key])} → {fmt(pnl_scn[key])}, {change_word(diff)} Net Income / Retained Earnings")
+    explanation.append("- Net Loans change due to Provision, Tax Payable changes due to Tax.")
+    explanation.append("- Total Assets = Total Liabilities + Equity remains balanced.")
+    return "\n".join(explanation)
+
 st.markdown("### Dynamic Explanation")
-st.markdown(generate_dynamic_explanation(pnl_base, pnl_scn))
+st.markdown(generate_dynamic_explanation_full(pnl_base, pnl_scn))
 
 st.success("✔ Balance sheets and P&L are correctly aligned and balanced.")
