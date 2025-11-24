@@ -24,7 +24,7 @@ DEFAULTS = {
 
 for key in ['state', 'prev', 'messages', 'prev_bs']:
     if key not in st.session_state:
-        st.session_state[key] = deepcopy(DEFAULTS) if key not in ['messages','prev_bs'] else deepcopy(DEFAULTS)
+        st.session_state[key] = deepcopy(DEFAULTS)
 
 # --- Helpers ------------------------------------------------------------
 def fmt(x):
@@ -133,7 +133,9 @@ if submitted_pnl:
 
 # --- Display Balance Sheet Before & After --------------------------------
 st.subheader("Balance Sheet - Before & After")
-prev_assets, prev_liabilities, prev_equity, prev_total_assets, prev_total_liabilities, prev_total_equity = compute_balance_sheet(st.session_state.prev_bs, old_retained=st.session_state.prev_bs.get('retained_earnings',0), pnl_component=0)
+prev_assets, prev_liabilities, prev_equity, prev_total_assets, prev_total_liabilities, prev_total_equity = compute_balance_sheet(
+    st.session_state.prev_bs, old_retained=st.session_state.prev_bs.get('retained_earnings', 0), pnl_component=0
+)
 assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state, pnl_component, old_retained)
 
 col1, col2 = st.columns([1,1])
@@ -141,7 +143,7 @@ with col1:
     st.markdown("**Assets - Before / After**")
     df_assets = pd.DataFrame({
         "Line Item": list(assets.keys()),
-        "Before": [fmt(prev_assets[k]) for k in assets.keys()],
+        "Before": [fmt(prev_assets.get(k,0)) for k in assets.keys()],
         "After": [fmt(assets[k]) for k in assets.keys()]
     })
     st.table(df_assets.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
@@ -150,7 +152,7 @@ with col2:
     st.markdown("**Liabilities & Equity - Before / After**")
     df_eq = pd.DataFrame({
         "Line Item": list(liabilities.keys()) + list(equity.keys()),
-        "Before": [fmt(prev_liabilities[k]) for k in liabilities.keys()] + [fmt(prev_equity[k]) for k in equity.keys()],
+        "Before": [fmt(prev_liabilities.get(k,0)) for k in liabilities.keys()] + [fmt(prev_equity.get(k,0)) for k in equity.keys()],
         "After": [fmt(liabilities[k]) for k in liabilities.keys()] + [fmt(equity[k]) for k in equity.keys()]
     })
     st.table(df_eq.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
