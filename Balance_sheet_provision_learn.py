@@ -51,13 +51,20 @@ def compute_pnl(s):
     }
 
 # --- Balance Sheet Builder ---
-def build_bs(state, pnl, base_re=None):
+def build_bs(state, pnl, base_re=None, is_base=False):
     if base_re is None:
         base_re = state["retained_earnings"]
 
-    new_allowance = state["allowance"] + pnl["Provision Expense"]
-    new_tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
-    new_retained = base_re + pnl["Net Income"]
+    # For base case, use existing allowance; for scenario, add provision
+    if is_base:
+        new_allowance = state["allowance"]
+        new_tax_payable = state["accrued_tax_payable"]
+        new_retained = state["retained_earnings"]
+    else:
+        new_allowance = state["allowance"] + pnl["Provision Expense"]
+        new_tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
+        new_retained = base_re + pnl["Net Income"]
+    
     net_loans = state["gross_loans"] - new_allowance
 
     total_assets = state["cash"] + net_loans + state["ppe"]
