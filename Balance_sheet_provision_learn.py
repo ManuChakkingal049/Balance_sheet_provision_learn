@@ -59,7 +59,7 @@ def compute_pnl(s):
         "Net Income": net_income,
     }
 
-def compute_balance_sheet(s, include_retained=True):
+def compute_balance_sheet(s, include_retained=True, old_retained=0.0, pnl_component=0.0):
     assets = {
         "Cash": float(s.get("cash", 0)),
         "Accounts Receivable (gross)": float(s.get("accounts_receivable", 0)),
@@ -75,11 +75,16 @@ def compute_balance_sheet(s, include_retained=True):
     }
     total_liabilities = sum(liabilities.values())
 
-    retained = float(s.get("retained_earnings", 0)) if include_retained else 0.0
-    equity = {
-        "Share Capital": float(s.get("share_capital", 0)),
-        "Retained Earnings": retained,
-    }
+    if include_retained:
+        equity = {
+            "Share Capital": float(s.get("share_capital", 0)),
+            f"Retained Earnings (Old: {fmt(old_retained)} + P&L: {fmt(pnl_component)})": old_retained + pnl_component,
+        }
+    else:
+        equity = {
+            "Share Capital": float(s.get("share_capital", 0)),
+            "Retained Earnings": 0.0,
+        }
     total_equity = sum(equity.values())
 
     return assets, liabilities, equity, total_assets, total_liabilities, total_equity
@@ -98,36 +103,34 @@ def apply_changes(new_vals, auto_balance_cash=True):
     s = st.session_state.state
     prev = st.session_state.prev
 
-    provision_changed = False
-    delta_provision = float(new_vals.get("provision_expense", 0)) - float(prev.get("provision_expense", 0))
-    if abs(delta_provision) > 0.005:
-        s["provision_expense"] = float(new_vals["provision_expense"])
-        push_message(f"Provision changed by {fmt(delta_provision)}. Automatically affects P&L and Retained Earnings.")
-        provision_changed = True
+    old_retained = s["retained_earnings"]
+    old_net_income = compute_pnl(prev)["Net Income"]
 
-    for key in ["revenue", "cogs", "opex", "interest_expense", "tax_rate",
-                "cash", "accounts_receivable", "inventory", "ppe",
-                "accounts_payable", "debt", "share_capital"]:
-        s[key] = float(new_vals.get(key, s.get(key, 0)))
+    for key in new_vals:
+        s[key] = float(new_vals[key])
 
-    pnl_before = compute_pnl(prev).get("Net Income", 0)
-    pnl_after = compute_pnl(s).get("Net Income", 0)
-    delta_net_income = pnl_after - pnl_before
-    if abs(delta_net_income) > 0.005:
-        s["retained_earnings"] += delta_net_income
-        push_message(f"Net Income changed by {fmt(delta_net_income)}. Retained Earnings updated automatically.")
+    new_net_income = compute_pnl(s)["Net Income"]
+    pnl_component = new_net_income - old_net_income
+
+    if abs(pnl_component) > 0.01:
+        s["retained_earnings"] = old_retained + pnl_component
+        push_message(f"Net Income changed by {fmt(pnl_component)}. Retained Earnings updated automatically.")
+
+    provision_changed = abs(float(new_vals.get("provision_expense",0)) - float(prev.get("provision_expense",0))) > 0.01
+    if provision_changed:
+        push_message(f"Provision changed by {fmt(float(new_vals.get('provision_expense',0)) - float(prev.get('provision_expense',0)))}. Affects P&L and reduces Accounts Receivable (Assets).")
 
     gap = balance_sheet_gap(s)
-    if auto_balance_cash and abs(gap) > 0.005:
+    if auto_balance_cash and abs(gap) > 0.01:
         s["cash"] -= gap
         push_message(f"Auto-balancing: Cash adjusted by {-gap:,.2f} to maintain balance.")
 
     st.session_state.prev = deepcopy(s)
-    return provision_changed, delta_net_income
+    return provision_changed, pnl_component, old_retained
 
 # --- UI ---------------------------------------------------------------
 st.title("Interactive P&L & Balance Sheet Explorer 📊")
-st.write("Edit values and watch effects flow through P&L and Balance Sheet.")
+st.write("Edit values and see effects on P&L and Balance Sheet.")
 
 col1, col2 = st.columns([1,1])
 
@@ -156,15 +159,16 @@ with col2:
         submitted_bs = st.form_submit_button("Apply Balance Sheet changes")
 
 provision_changed = False
-delta_net_income = 0
+pnl_component = 0
+old_retained = 0
 if submitted_pnl or submitted_bs:
     new_vals = {"revenue": rev, "cogs": cogs, "opex": opex, "interest_expense": interest, "provision_expense": provision, "tax_rate": tax_rate,
                 "cash": cash, "accounts_receivable": ar, "inventory": inv, "ppe": ppe,
                 "accounts_payable": ap, "debt": debt, "share_capital": share_cap}
-    provision_changed, delta_net_income = apply_changes(new_vals, auto_balance_cash=auto_balance)
+    provision_changed, pnl_component, old_retained = apply_changes(new_vals, auto_balance_cash=auto_balance)
 
 # --- Display ------------------------------------------------------------
-assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state)
+assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state, old_retained=old_retained, pnl_component=pnl_component)
 
 col3, col4 = st.columns([1,1])
 with col3:
@@ -184,7 +188,7 @@ with col4:
     right_df.loc['Total'] = ['Total Liabilities + Equity', total_liabilities + total_equity]
     right_df["Amount"] = right_df["Amount"].map(fmt)
     def highlight_equity(row):
-        if provision_changed and row['Liabilities & Equity'] == 'Retained Earnings':
+        if row['Liabilities & Equity'].startswith('Retained Earnings'):
             return ['background-color: yellow']*2
         return ['']*2
     st.table(right_df.style.apply(highlight_equity, axis=1))
@@ -200,5 +204,9 @@ def highlight_pnl(row):
     return ['']*2
 st.table(pnl_df.style.apply(highlight_pnl, axis=1))
 
-if delta_net_income != 0:
-    st.info(f"Net Income change due to provision: {fmt(delta_net_income)} flows into Retained Earnings")
+st.sidebar.header("Explanation")
+if st.session_state.messages:
+    for m in st.session_state.messages:
+        st.sidebar.write(f"- {m}")
+else:
+    st.sidebar.write("Make a change to see how it affects P&L and Balance Sheet.")
