@@ -106,20 +106,22 @@ def generate_dynamic_explanation(pnl_base, pnl_scn):
     return "\n".join(explanation)
 
 # -----------------------------
-# Vertical compact inputs for P&L
+# Two Columns for Base and Scenario Inputs
 # -----------------------------
-st.title("Bank P&L → Balance Sheet What-If (Compact Inputs)")
+st.title("Bank P&L → Balance Sheet What-If (Two Column Inputs)")
 
-st.subheader("Base Scenario P&L (Vertical Compact Inputs)")
-with st.container():
+col_base, col_scn = st.columns(2)
+
+with col_base:
+    st.subheader("Base Scenario P&L")
     revenue_base = st.number_input("Revenue (Base)", min_value=0, max_value=300_000, value=120_000, step=5_000)
     opex_base = st.number_input("Opex (Base)", min_value=0, max_value=100_000, value=25_000, step=1_000)
     interest_base = st.number_input("Interest Expense (Base)", min_value=0, max_value=20_000, value=3_000, step=500)
     provision_base = st.number_input("Provision (Base)", min_value=0, max_value=50_000, value=0, step=1_000)
     tax_rate_base = st.number_input("Tax Rate (Base)", min_value=0.0, max_value=0.50, value=0.25, step=0.01, format="%.2f")
 
-st.subheader("Scenario P&L (Vertical Compact Inputs)")
-with st.container():
+with col_scn:
+    st.subheader("Scenario P&L")
     revenue_scn = st.number_input("Revenue (Scenario)", min_value=0, max_value=300_000, value=120_000, step=5_000)
     opex_scn = st.number_input("Opex (Scenario)", min_value=0, max_value=100_000, value=25_000, step=1_000)
     interest_scn = st.number_input("Interest Expense (Scenario)", min_value=0, max_value=20_000, value=3_000, step=500)
