@@ -119,7 +119,7 @@ def generate_dynamic_explanation(pnl_base, pnl_scn):
 st.title("Bank P&L → Balance Sheet What-If (Full P&L Scenario)")
 
 with st.form("inputs"):
-    st.subheader("Base Scenario P&L")
+    st.subheader("Base  P&L")
     c1, c2, c3 = st.columns(3)
     with c1:
         revenue_base = st.slider("Revenue (Base)", 0, 300_000, 120_000, 5_000)
@@ -130,7 +130,7 @@ with st.form("inputs"):
     with c3:
         tax_rate_base = st.slider("Tax Rate (Base)", 0.0, 0.50, 0.25, 0.01)
 
-    st.markdown("### Scenario Scenario P&L")
+    st.markdown("### Scenario  P&L")
     c1, c2, c3 = st.columns(3)
     with c1:
         revenue_scn = st.slider("Revenue (Scenario)", 0, 300_000, 120_000, 5_000)
