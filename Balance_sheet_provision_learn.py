@@ -24,7 +24,7 @@ DEFAULTS = {
 
 for key in ['state', 'prev', 'messages', 'prev_bs']:
     if key not in st.session_state:
-        st.session_state[key] = deepcopy(DEFAULTS) if key not in ['messages','prev_bs'] else []
+        st.session_state[key] = deepcopy(DEFAULTS) if key not in ['messages','prev_bs'] else deepcopy(DEFAULTS)
 
 # --- Helpers ------------------------------------------------------------
 def fmt(x):
@@ -84,10 +84,6 @@ def compute_balance_sheet(s, pnl_component=0.0, old_retained=0.0):
 
     return assets, liabilities, equity, total_assets, total_liabilities, total_equity
 
-def balance_sheet_gap(s, pnl_component=0.0, old_retained=0.0):
-    _, _, _, total_assets, total_liabilities, total_equity = compute_balance_sheet(s, pnl_component, old_retained)
-    return total_assets - (total_liabilities + total_equity)
-
 # --- Apply changes -----------------------------------------------------
 def push_message(msg):
     st.session_state.messages.insert(0, msg)
@@ -118,12 +114,15 @@ st.write("Use the sliders to change P&L items and see their effect on the Balanc
 
 st.header("Profit & Loss (Income Statement)")
 with st.form(key="pnl_form"):
-    rev = st.number_input("Revenue", value=st.session_state.state["revenue"], format="%.2f")
-    cogs = st.number_input("COGS", value=st.session_state.state["cogs"], format="%.2f")
-    opex = st.number_input("Operating Expenses", value=st.session_state.state["opex"], format="%.2f")
-    interest = st.number_input("Interest Expense", value=st.session_state.state["interest_expense"], format="%.2f")
-    provision = st.slider("Provision Expense", min_value=0.0, max_value=5000.0, value=st.session_state.state["provision_expense"], step=100.0)
-    tax_rate = st.slider("Tax rate", min_value=0.0, max_value=0.5, value=float(st.session_state.state["tax_rate"]), step=0.01)
+    slider_col1, slider_col2 = st.columns(2)
+    with slider_col1:
+        rev = st.slider("Revenue", min_value=0.0, max_value=500000.0, value=st.session_state.state["revenue"], step=1000.0)
+        cogs = st.slider("COGS", min_value=0.0, max_value=500000.0, value=st.session_state.state["cogs"], step=500.0)
+        opex = st.slider("Operating Expenses", min_value=0.0, max_value=200000.0, value=st.session_state.state["opex"], step=500.0)
+    with slider_col2:
+        interest = st.slider("Interest Expense", min_value=0.0, max_value=50000.0, value=st.session_state.state["interest_expense"], step=100.0)
+        provision = st.slider("Provision Expense", min_value=0.0, max_value=5000.0, value=st.session_state.state["provision_expense"], step=100.0)
+        tax_rate = st.slider("Tax rate", min_value=0.0, max_value=0.5, value=float(st.session_state.state["tax_rate"]), step=0.01)
     submitted_pnl = st.form_submit_button("Apply P&L changes")
 
 pnl_component = 0
@@ -134,7 +133,7 @@ if submitted_pnl:
 
 # --- Display Balance Sheet Before & After --------------------------------
 st.subheader("Balance Sheet - Before & After")
-prev_assets, prev_liabilities, prev_equity, prev_total_assets, prev_total_liabilities, prev_total_equity = compute_balance_sheet(st.session_state.prev_bs, old_retained=st.session_state.prev_bs['retained_earnings'], pnl_component=0)
+prev_assets, prev_liabilities, prev_equity, prev_total_assets, prev_total_liabilities, prev_total_equity = compute_balance_sheet(st.session_state.prev_bs, old_retained=st.session_state.prev_bs.get('retained_earnings',0), pnl_component=0)
 assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state, pnl_component, old_retained)
 
 col1, col2 = st.columns([1,1])
@@ -161,7 +160,6 @@ st.subheader("Income Statement")
 pnl = compute_pnl(st.session_state.state)
 pnl_df = pd.DataFrame(list(pnl.items()), columns=["Line", "Amount"])
 pnl_df["Amount"] = pnl_df["Amount"].map(fmt)
-
 st.table(pnl_df)
 
 # Sidebar Explanation
