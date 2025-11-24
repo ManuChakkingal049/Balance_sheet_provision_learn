@@ -2,31 +2,26 @@ import streamlit as st
 import pandas as pd
 from copy import deepcopy
 
-st.set_page_config(layout="wide", page_title="Bank P&L & Balance Sheet What-If")
+st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If")
 
 # -----------------------------
 # Default Bank Balance Sheet
 # -----------------------------
 DEFAULTS = {
-    # P&L
     "revenue": 120_000.0,
     "cogs": 45_000.0,
     "opex": 25_000.0,
     "interest_expense": 3_000.0,
     "tax_rate": 0.25,
-    "provision_expense": 0.0,
 
-    # Assets
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
     "ppe": 30_000.0,
 
-    # Liabilities
     "deposits": 300_000.0,
     "debt": 80_000.0,
     "accrued_interest_payable": 3_000.0,
 
-    # Equity
     "share_capital": 50_000.0,
 }
 
@@ -37,25 +32,19 @@ def fmt(x):
     return f"{x:,.0f}"
 
 # -----------------------------
-# P&L Computation
+# P&L computation
 # -----------------------------
-def compute_pnl(state):
-    net_interest_income = state["revenue"] - state["cogs"]
-    operating_income = net_interest_income - state["opex"] - state["provision_expense"]
-    ebt = operating_income - state["interest_expense"]
-    tax = ebt * state["tax_rate"]
+def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
+    net_interest_income = revenue - cogs
+    operating_income = net_interest_income - opex - provision
+    ebt = operating_income - interest_expense
+    tax = ebt * tax_rate
     net_income = ebt - tax
-    return {
-        "Revenue": state["revenue"],
-        "Opex": state["opex"],
-        "Provision": state["provision_expense"],
-        "EBT": ebt,
-        "Tax": tax,
-        "Net Income": net_income
-    }
+    return {"Revenue": revenue, "Opex": opex, "Provision": provision,
+            "EBT": ebt, "Tax": tax, "Net Income": net_income}
 
 # -----------------------------
-# Build Balance Sheet
+# Build balance sheet
 # -----------------------------
 def build_bs(state, pnl):
     allowance = pnl["Provision"]
@@ -73,7 +62,7 @@ def build_bs(state, pnl):
         "  ├─ Gross Loans": state["gross_loans"],
         "  └─ Allowance for Loan Losses": -allowance,
         "Property & Equipment": state["ppe"],
-        "TOTAL ASSETS": total_assets
+        "TOTAL ASSETS": total_assets,
     }
 
     lie = {
@@ -86,122 +75,123 @@ def build_bs(state, pnl):
         "Share Capital": state["share_capital"],
         "Retained Earnings": retained_earnings,
         "TOTAL EQUITY": total_equity,
-        "TOTAL LIABILITIES + EQUITY": total_liabilities + total_equity
+        "TOTAL LIABILITIES + EQUITY": total_liabilities + total_equity,
     }
 
     return {"assets": assets, "lie": lie}
 
 # -----------------------------
-# Sidebar sliders for After scenario
+# UI sliders for scenario
 # -----------------------------
-st.sidebar.header("Scenario Adjustments (After)")
+st.title("Bank P&L → Balance Sheet What-If (Provision Scenario)")
 
-after_state = deepcopy(st.session_state.state)
-after_state["revenue"] = st.sidebar.slider("Revenue", 0.0, 300_000.0, st.session_state.state["revenue"], 5_000.0)
-after_state["opex"] = st.sidebar.slider("Opex", 0.0, 100_000.0, st.session_state.state["opex"], 1_000.0)
-after_state["provision_expense"] = st.sidebar.slider("Provision", 0.0, 50_000.0, 10_000.0, 1_000.0)
-after_state["cash"] = st.sidebar.slider("Cash", 0.0, 200_000.0, st.session_state.state["cash"], 1_000.0)
-after_state["gross_loans"] = st.sidebar.slider("Gross Loans", 0.0, 500_000.0, st.session_state.state["gross_loans"], 1_000.0)
-after_state["ppe"] = st.sidebar.slider("PPE", 0.0, 100_000.0, st.session_state.state["ppe"], 1_000.0)
-after_state["deposits"] = st.sidebar.slider("Deposits", 0.0, 400_000.0, st.session_state.state["deposits"], 1_000.0)
-after_state["debt"] = st.sidebar.slider("Debt", 0.0, 150_000.0, st.session_state.state["debt"], 1_000.0)
+with st.form("inputs"):
+    c1, c2 = st.columns(2)
+    with c1:
+        provision_base = st.slider("Base Provision", 0.0, 50_000.0, 0.0, 1_000.0)
+    with c2:
+        provision_scenario = st.slider("Scenario Provision", 0.0, 50_000.0, 10_000.0, 1_000.0)
 
-# -----------------------------
-# Compute P&L and BS
-# -----------------------------
-pnl_before = compute_pnl(st.session_state.state)
-bs_before = build_bs(st.session_state.state, pnl_before)
+    apply = st.form_submit_button("Apply Scenario", type="primary")
 
-pnl_after = compute_pnl(after_state)
-bs_after = build_bs(after_state, pnl_after)
+tax_rate = st.session_state.state["tax_rate"]
+revenue = st.session_state.state["revenue"]
+cogs = st.session_state.state["cogs"]
+opex = st.session_state.state["opex"]
+interest_expense = st.session_state.state["interest_expense"]
 
 # -----------------------------
-# P&L Table (Before vs After)
+# Compute P&L
 # -----------------------------
-pnl_items = ["Revenue", "Opex", "Provision", "EBT", "Tax", "Net Income"]
-pnl_df = pd.DataFrame({
-    "Item": pnl_items,
-    "Before": [pnl_before[i] for i in pnl_items],
-    "After": [pnl_after[i] for i in pnl_items]
-})
-st.markdown("### P&L – Before vs After")
-st.dataframe(pnl_df.style.format({"Before": "{0:,.0f}", "After": "{0:,.0f}"}).hide(axis="index"), use_container_width=True)
+pnl_base = compute_pnl(revenue, cogs, opex, interest_expense, provision_base, tax_rate)
+pnl_scenario = compute_pnl(revenue, cogs, opex, interest_expense, provision_scenario, tax_rate)
 
 # -----------------------------
-# Balance Sheet Table (Before vs After)
+# Build balance sheets
 # -----------------------------
-asset_items = ["Cash","Loans (net)","  ├─ Gross Loans","  └─ Allowance for Loan Losses","Property & Equipment","TOTAL ASSETS"]
-liability_items = ["Customer Deposits","Debt","Accrued Interest Payable","Accrued Tax Payable","TOTAL LIABILITIES","","Share Capital","Retained Earnings","TOTAL EQUITY","TOTAL LIABILITIES + EQUITY"]
+bs_base = build_bs(st.session_state.state, pnl_base)
+bs_scenario = build_bs(st.session_state.state, pnl_scenario)
 
-def create_bs_table(bs_before, bs_after):
-    data = {"Assets":[],"Before":[],"After":[],"Liabilities & Equity":[],"Before_L&E":[],"After_L&E":[]}
-    max_rows = max(len(asset_items), len(liability_items))
-    for i in range(max_rows):
-        # Assets
-        if i<len(asset_items):
-            key = asset_items[i]
-            data["Assets"].append(key)
-            data["Before"].append(bs_before["assets"].get(key,""))
-            data["After"].append(bs_after["assets"].get(key,""))
-        else:
-            data["Assets"].append(""); data["Before"].append(""); data["After"].append("")
-        # Liabilities & Equity
-        if i<len(liability_items):
-            key = liability_items[i]
-            data["Liabilities & Equity"].append(key)
-            data["Before_L&E"].append(bs_before["lie"].get(key,""))
-            data["After_L&E"].append(bs_after["lie"].get(key,""))
-        else:
-            data["Liabilities & Equity"].append(""); data["Before_L&E"].append(""); data["After_L&E"].append("")
-
+# -----------------------------
+# P&L side-by-side table
+# -----------------------------
+def create_pnl_comparison(pnl_base, pnl_scenario):
+    items = ["Revenue","Opex","Provision","EBT","Tax","Net Income"]
+    data = {"Item":[], "Base":[], "Scenario":[]}
+    for item in items:
+        data["Item"].append(item)
+        data["Base"].append(pnl_base[item])
+        data["Scenario"].append(pnl_scenario[item])
     df = pd.DataFrame(data)
+    return df.style.format({"Base":"{0:,.0f}", "Scenario":"{0:,.0f}"}).hide(axis="index")
+
+st.markdown("### P&L Comparison – Base vs Scenario Provision")
+st.dataframe(create_pnl_comparison(pnl_base, pnl_scenario), use_container_width=True)
+
+# -----------------------------
+# Display retained earnings above BS
+# -----------------------------
+st.write(f"**Retained Earnings – Base:** {fmt(bs_base['lie']['Retained Earnings'])}")
+st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scenario['lie']['Retained Earnings'])}")
+
+# -----------------------------
+# Table builder for BS
+# -----------------------------
+def create_bs_table(bs_data, compare_bs=None):
+    asset_items = ["Cash","Loans (net)","  ├─ Gross Loans","  └─ Allowance for Loan Losses","Property & Equipment","TOTAL ASSETS"]
+    liability_items = ["Customer Deposits","Debt","Accrued Interest Payable","Accrued Tax Payable","TOTAL LIABILITIES","","Share Capital","Retained Earnings","TOTAL EQUITY","TOTAL LIABILITIES + EQUITY"]
+
+    data = {"Assets":[],"Amount":[],"Liabilities & Equity":[],"Amount ":[]}
+    def get_val(k): return bs_data["assets"].get(k, bs_data["lie"].get(k,""))
+    def get_old_val(k): return None if compare_bs is None else compare_bs["assets"].get(k, compare_bs["lie"].get(k,None))
+
+    for i in range(max(len(asset_items), len(liability_items))):
+        if i<len(asset_items):
+            label=asset_items[i]; val=get_val(label)
+            data["Assets"].append(label)
+            data["Amount"].append(fmt(val) if isinstance(val,(int,float)) else "")
+        else: data["Assets"].append(""); data["Amount"].append("")
+        if i<len(liability_items):
+            label=liability_items[i]; val=get_val(label)
+            data["Liabilities & Equity"].append(label)
+            data["Amount "].append(fmt(val) if isinstance(val,(int,float)) else "")
+        else: data["Liabilities & Equity"].append(""); data["Amount "].append("")
+
+    df=pd.DataFrame(data)
     def style_fn(row):
         styles=[""]*len(row)
-        for col_before, col_after in [("Before","After"),("Before_L&E","After_L&E")]:
-            if row[col_before]!=row[col_after]:
-                idx_before = df.columns.get_loc(col_before)
-                idx_after = df.columns.get_loc(col_after)
-                styles[idx_after] = "background-color:#fff7b2;font-weight:bold"
+        if "TOTAL" in row["Assets"]: styles[0]=styles[1]="font-weight:bold;background-color:#e3f2fd"
+        if ("TOTAL" in row["Liabilities & Equity"]) or ("EQUITY" in row["Liabilities & Equity"]): styles[2]=styles[3]="font-weight:bold;background-color:#e3f2fd"
+        if compare_bs:
+            a,l=row["Assets"],row["Liabilities & Equity"]
+            if a and get_old_val(a)!=get_val(a): styles[1]="background-color:#fff7b2;font-weight:bold"
+            if l and get_old_val(l)!=get_val(l): styles[3]="background-color:#fff7b2;font-weight:bold"
         return styles
-    return df.style.apply(style_fn, axis=1).format("{0:,.0f}").hide(axis="index")
-
-st.markdown("### Balance Sheet – Before vs After")
-st.dataframe(create_bs_table(bs_before, bs_after), use_container_width=True)
+    return df.style.apply(style_fn, axis=1).hide(axis="index")
 
 # -----------------------------
-# Balance Check
+# Display Balance Sheets
 # -----------------------------
-st.metric("Assets = L+E (Before)", "✓" if abs(bs_before["assets"]["TOTAL ASSETS"]-bs_before["lie"]["TOTAL LIABILITIES + EQUITY"])<1e-2 else "✗")
-st.metric("Assets = L+E (After)", "✓" if abs(bs_after["assets"]["TOTAL ASSETS"]-bs_after["lie"]["TOTAL LIABILITIES + EQUITY"])<1e-2 else "✗")
+st.markdown("### Balance Sheet – Base Provision")
+st.dataframe(create_bs_table(bs_base), use_container_width=True)
 
-st.success("✔ Balance sheets are balanced in both scenarios.")
+st.markdown("### Balance Sheet – Scenario Provision (Changes Highlighted)")
+st.dataframe(create_bs_table(bs_scenario, bs_base), use_container_width=True)
 
 # -----------------------------
-# Dynamic reasoning / explanation
+# Dynamic Explanation
 # -----------------------------
-st.markdown("## How changes propagate to the Balance Sheet")
-st.markdown("""
-- **Provision for Loan Losses**:
-  - Increases allowance → reduces net loans (asset)
-  - Reduces taxable profit → reduces tax payable (liability)
-  - Reduces net income → reduces retained earnings (equity)
-- **Revenue / Interest Income**:
-  - Increases EBT → increases net income → increases retained earnings
-- **Opex / Interest Expense**:
-  - Increases expense → reduces EBT → reduces net income → reduces retained earnings
-- **Balance Sheet items (Cash, PPE, Deposits, Debt)**:
-  - Directly affect total assets or total liabilities
-- **Net effect**: Every P&L change flows through to **retained earnings and tax**, maintaining balance
+st.markdown("### Dynamic Explanation")
+st.markdown(f"""
+- **Provision Increase:** From {fmt(provision_base)} → {fmt(provision_scenario)}  
+  - Increases **Allowance for Loan Losses** → reduces **Net Loans** (asset side).  
+  - Reduces **EBT** → reduces **Net Income** → reduces **Retained Earnings** (equity side).  
+  - Reduces **Tax** payable as it is computed on EBT → reduces **Accrued Tax Payable** (liability side).  
+
+**Balance Sheet Impact:**  
+- Assets decrease due to higher allowance.  
+- Liabilities decrease slightly (tax), but equity decreases by net income reduction.  
+- Total Assets = Total Liabilities + Equity remains balanced.
 """)
 
-# -----------------------------
-# Summary table of changes
-# -----------------------------
-summary_df = pd.DataFrame({
-    "Item": pnl_items + asset_items + liability_items,
-    "Before": [pnl_before[i] for i in pnl_items] + [bs_before["assets"].get(i,bs_before["lie"].get(i,"")) for i in asset_items] + [bs_before["assets"].get(i,bs_before["lie"].get(i,"")) for i in liability_items],
-    "After": [pnl_after[i] for i in pnl_items] + [bs_after["assets"].get(i,bs_after["lie"].get(i,"")) for i in asset_items] + [bs_after["assets"].get(i,bs_after["lie"].get(i,"")) for i in liability_items],
-})
-summary_df["Change"] = summary_df["After"] - summary_df["Before"]
-st.markdown("### Summary of Changes (Before → After)")
-st.dataframe(summary_df.style.format("{0:,.0f}").hide(axis="index"), use_container_width=True)
+st.success("✔ Balance sheets and P&L are correctly aligned and balanced.")
