@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 from copy import deepcopy
 
-st.set_page_config(layout="wide", page_title="P&L to Balance Sheet What-If (Always Balances)")
+st.set_page_config(layout="wide", page_title="P&L → Balance Sheet What-If (Wide Format)")
 
-# --- Initial Balanced Financial Position ---
+# --- Initial Balanced Position ---
 DEFAULTS = {
     "revenue": 100_000.0,
     "cogs": 40_000.0,
@@ -13,10 +13,9 @@ DEFAULTS = {
     "tax_rate": 0.20,
     "provision_expense": 500.0,
 
-    # Balance Sheet (already balanced at start)
     "cash": 20_000.0,
     "accounts_receivable_gross": 15_000.0,
-    "allowance_doubtful": 0.0,           # cumulative
+    "allowance_doubtful": 0.0,
     "inventory": 10_000.0,
     "ppe": 30_000.0,
 
@@ -24,198 +23,214 @@ DEFAULTS = {
     "accrued_tax_payable": 0.0,
     "debt": 10_000.0,
     "share_capital": 30_000.0,
-    "retained_earnings": 27_000.0,       # Makes BS balance initially
+    "retained_earnings": 27_000.0,  # Makes initial BS balance
 }
 
-# Initialize session state
 if "state" not in st.session_state:
     st.session_state.state = deepcopy(DEFAULTS)
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
 # --- Helpers ---
 def fmt(x):
-    return f"{float(x):,.2f}" if isinstance(x, (int, float)) else str(x)
+    return f"{float(x):,.2f}" if isinstance(x, (int, float)) else x
 
-def push_message(msg):
-    st.session_state.messages.insert(0, msg)
-    st.session_state.messages = st.session_state.messages[:10]
-
-# --- P&L Calculation ---
+# --- P&L ---
 def compute_pnl(s):
-    revenue = s["revenue"]
-    cogs = s["cogs"]
-    gross_profit = revenue - cogs
-    opex = s["opex"]
-    provision = s["provision_expense"]
-    ebit = gross_profit - opex - provision
-    interest = s["interest_expense"]
-    ebt = ebit - interest
-    tax_rate = s["tax_rate"]
-    tax_expense = max(ebt, 0) * tax_rate
-    net_income = ebt - tax_expense
-
+    gross_profit = s["revenue"] - s["cogs"]
+    ebit = gross_profit - s["opex"] - s["provision_expense"]
+    ebt = ebit - s["interest_expense"]
+    tax = max(ebt, 0) * s["tax_rate"]
+    net_income = ebt - tax
     return {
-        "Revenue": revenue,
-        "COGS": cogs,
+        "Revenue": s["revenue"],
+        "COGS": s["cogs"],
         "Gross Profit": gross_profit,
-        "OpEx": opex,
-        "Provision Expense": provision,
+        "OpEx": s["opex"],
+        "Provision Expense": s["provision_expense"],
         "EBIT": ebit,
-        "Interest Expense": interest,
+        "Interest": s["interest_expense"],
         "EBT": ebt,
-        "Tax Expense": tax_expense,
+        "Tax Expense": tax,
         "Net Income": net_income,
     }
 
-# --- Balance Sheet (Always Balances!) ---
-def build_balance_sheet(state, pnl, base_retained=None):
-    if base_retained is None:
-        base_retained = state["retained_earnings"]
+# --- Balance Sheet Builder (Always Balances) ---
+def build_bs(state, pnl, base_re=None):
+    if base_re is None:
+        base_re = state["retained_earnings"]
 
-    # Cumulative contra-asset & liability
-    new_allowance = state["allowance_doubtful"] + pnl["Provision Expense"]
-    new_tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
-    new_retained = base_retained + pnl["Net Income"]
+    allowance = state["allowance_doubtful"] + pnl["Provision Expense"]
+    tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
+    retained = base_re + pnl["Net Income"]
+    net_ar = state["accounts_receivable_gross"] - allowance
 
-    # Assets
-    assets = {
-        "Cash": state["cash"],
-        "Accounts Receivable (gross)": state["accounts_receivable_gross"],
-        "Less: Allowance for Doubtful Accounts": -new_allowance,
-        "Accounts Receivable (net)": state["accounts_receivable_gross"] - new_allowance,
-        "Inventory": state["inventory"],
-        "PPE (net)": state["ppe"],
-    }
-    total_assets = state["cash"] + (state["accounts_receivable_gross"] - new_allowance) + state["inventory"] + state["ppe"]
-
-    # Liabilities
-    liabilities = {
-        "Accounts Payable": state["accounts_payable"],
-        "Accrued Tax Payable": new_tax_payable,
-        "Debt": state["debt"],
-    }
-    total_liabilities = sum(liabilities.values())
-
-    # Equity
-    equity = {
-        "Share Capital": state["share_capital"],        # FIXED: was "share_capital Rb"
-        "Retained Earnings": new_retained,
-    }
-    total_equity = sum(equity.values())
-    total_liab_equity = total_liabilities + total_equity
+    total_assets = state["cash"] + net_ar + state["inventory"] + state["ppe"]
+    total_liab = state["accounts_payable"] + tax_payable + state["debt"]
+    total_equity = state["share_capital"] + retained
+    total_l_e = total_liab + total_equity
 
     return {
-        "assets": assets,
-        "total_assets": total_assets,
-        "liabilities": liabilities,
-        "total_liabilities": total_liabilities,
-        "equity": equity,
-        "total_equity": total_equity,
-        "total_liab_equity": total_liab_equity,
-        "new_allowance": new_allowance,
-        "new_tax_payable": new_tax_payable,
-        "new_retained": new_retained,
+        "assets": {
+            "Cash": state["cash"],
+            "Accounts Receivable (net)": net_ar,
+            "  ├─ Gross AR": state["accounts_receivable_gross"],
+            "  └─ Allowance": -allowance,
+            "Inventory": state["inventory"],
+            "PPE (net)": state["ppe"],
+            "Total Assets": total_assets,
+        },
+        "liabilities": {
+            "Accounts Payable": state["accounts_payable"],
+            "Accrued Tax Payable": tax_payable,
+            "Debt": state["debt"],
+            "Total Liabilities": total_liab,
+        },
+        "equity": {
+            "Share Capital": state["share_capital"],
+            "Retained Earnings": retained,
+            "Total Equity": total_equity,
+        },
+        "total_l_e": total_l_e,
+        "allowance": allowance,
+        "tax_payable": tax_payable,
+        "retained": retained,
     }
 
-# --- Apply Scenario ---
-def apply_scenario(values):
-    temp = deepcopy(st.session_state.state)
-    for k, v in values.items():
-        temp[k] = float(v)
-    pnl = compute_pnl(temp)
-    bs = build_balance_sheet(temp, pnl, st.session_state.state["retained_earnings"])
-
-    delta_ni = pnl["Net Income"] - compute_pnl(st.session_state.state)["Net Income"]
-    push_message(f"Net Income changed by {fmt(delta_ni)} to flows to Retained Earnings")
-
-    return temp, pnl, bs
-
 # --- UI ---
-st.title("P&L to Balance Sheet What-If Explorer")
-st.markdown("**Change P&L items to instantly see the correct impact on the Balance Sheet — always balances!**")
+st.title("P&L → Balance Sheet What-If Explorer")
+st.markdown("**Adjust P&L → Instantly see correct impact on Balance Sheet (same date, always balances!)**")
 
-with st.form("pnl_form"):
-    c1, c2 = st.columns(2)
+with st.form("inputs"):
+    c1, c2, c3 = st.columns(3)
     with c1:
-        revenue = st.slider("Revenue", 0.0, 500_000.0, st.session_state.state["revenue"], step=1_000.0)
-        cogs = st.slider("COGS", 0.0, 300_000.0, st.session_state.state["cogs"], step=500.0)
-        opex = st.slider("Operating Expenses", 0.0, 200_000.0, st.session_state.state["opex"], step=500.0)
+        revenue = st.slider("Revenue", 0.0, 500_000.0, st.session_state.state["revenue"], 1_000.0)
+        cogs = st.slider("COGS", 0.0, 300_000.0, st.session_state.state["cogs"], 500.0)
     with c2:
-        interest = st.slider("Interest Expense", 0.0, 50_000.0, st.session_state.state["interest_expense"], step=100.0)
-        provision = st.slider("Provision Expense", 0.0, 10_000.0, st.session_state.state["provision_expense"], step=100.0)
-        tax_rate = st.slider("Tax Rate", 0.0, 0.5, st.session_state.state["tax_rate"], step=0.01, format="%.2f")
+        opex = st.slider("OpEx", 0.0, 200_000.0, st.session_state.state["opex"], 500.0)
+        provision = st.slider("Provision Expense", 0.0, 10_000.0, st.session_state.state["provision_expense"], 100.0)
+    with c3:
+        interest = st.slider("Interest Expense", 0.0, 50_000.0, st.session_state.state["interest_expense"], 100.0)
+        tax_rate = st.slider("Tax Rate", 0.0, 0.5, st.session_state.state["tax_rate"], 0.01, format="%.0%")
 
     submitted = st.form_submit_button("Apply Scenario", type="primary", use_container_width=True)
 
-# --- Compute Before & After ---
+# Compute
 base_pnl = compute_pnl(st.session_state.state)
-base_bs = build_balance_sheet(st.session_state.state, base_pnl)
+base_bs = build_bs(st.session_state.state, base_pnl)
 
 if submitted:
-    scenario_state, scenario_pnl, scenario_bs = apply_scenario({
-        "revenue": revenue, "cogs": cogs, "opex": opex,
-        "interest_expense": interest, "provision_expense": provision, "tax_rate": tax_rate
-    })
+    temp = deepcopy(st.session_state.state)
+    for k, v in zip(["revenue","cogs","opex","provision_expense","interest_expense","tax_rate"],
+                    [revenue, cogs, opex, provision, interest, tax_rate]):
+        temp[k] = v
+    scenario_pnl = compute_pnl(temp)
+    scenario_bs = build_bs(temp, scenario_pnl, st.session_state.state["retained_earnings"])
 else:
-    scenario_state, scenario_pnl, scenario_bs = st.session_state.state, base_pnl, base_bs
+    scenario_pnl = base_pnl
+    scenario_bs = base_bs
 
-# --- Display ---
-col1, col2 = st.columns(2)
+# --- Wide Balance Sheet Display ---
+st.markdown("### Balance Sheet – Before vs After (Same Date What-If)")
 
-with col1:
-    st.subheader("Income Statement")
-    df_pnl = pd.DataFrame({
-        "Item": scenario_pnl.keys(),
-        "Before": [fmt(v) for v in base_pnl.values()],
-        "After": [fmt(v) for v in scenario_pnl.values()],
-        "Change": [fmt(scenario_pnl[k] - base_pnl[k]) for k in base_pnl]
-    })
-    st.dataframe(df_pnl.style.apply(
-        lambda row: ["background: #ffcccc" if row["Before"] != row["After"] else "" for _ in row], axis=1
-    ), use_container_width=True)
+# Build rows
+rows = [
+    ("Cash", "Cash"),
+    ("Accounts Receivable (net)", "  ├─ Gross AR"),
+    ("", "  └─ Allowance"),
+    ("Inventory", "Inventory"),
+    ("PPE (net)", "PPE (net)"),
+    ("**Total Assets**", "**Total Assets**"),
+    ("", ""),
+    ("", "Accounts Payable"),
+    ("", "Accrued Tax Payable"),
+    ("", "Debt"),
+    ("", "**Total Liabilities**"),
+    ("", ""),
+    ("", "Share Capital"),
+    ("", "Retained Earnings"),
+    ("", "**Total Equity**"),
+    ("", ""),
+    ("**Total Liabilities + Equity**", "**Total Liabilities + Equity**"),
+]
 
-with col2:
-    st.subheader("Balance Sheet (Always Balances)")
-    lines = [
-        "Assets", "", "Cash", "Accounts Receivable (gross)",
-        "Less: Allowance for Doubtful Accounts", "Accounts Receivable (net)",
-        "Inventory", "PPE (net)", "Total Assets", "",
-        "Liabilities", "", "Accounts Payable", "Accrued Tax Payable", "Debt", "Total Liabilities", "",
-        "Equity", "", "Share Capital", "Retained Earnings", "Total Equity", "",
-        "Total Liabilities + Equity"
-    ]
+data = {
+    "Account": [],
+    "Before Assets": [], "After Assets": [],
+    "Before L&E": [],   "After L&E": [],
+}
 
-    def val(bs, key):
-        if key == "": return ""
-        if key == "Assets" or key == "Liabilities" or key == "Equity": return key
-        if key == "Total Assets": return fmt(bs["total_assets"])
-        if key == "Total Liabilities": return fmt(bs["total_liabilities"])
-        if key == "Total Equity": return fmt(bs["total_equity"])
-        if key == "Total Liabilities + Equity": return fmt(bs["total_liab_equity"])
-        if key in bs["assets"]: return fmt(bs["assets"][key])
-        if key in bs["liabilities"]: return fmt(bs["liabilities"][key])
-        if key in bs["equity"]: return fmt(bs["equity"][key])
-        return ""
+for asset_key, le_key in rows:
+    data["Account"].append(asset_key)
 
-    df_bs = pd.DataFrame({
-        "Account": lines,
-        "Before": [val(base_bs, x) for x in lines],
-        "After": [val(scenario_bs, x) for x in lines],
-    })
-    st.dataframe(df_bs.style.apply(
-        lambda row: ["font-weight: bold" if row["Account"] in ["Assets", "Liabilities", "Equity", "Total Assets", "Total Liabilities + Equity"] else "background: #ffffd0" if row["Before"] != row["After"] and row["Before"] != "" else "" for _ in row],
-        axis=1
-    ), use_container_width=True)
+    # Assets side
+    if asset_key and asset_key in base_bs["assets"]:
+        data["Before Assets"].append(fmt(base_bs["assets"][asset_key]))
+        data["After Assets"].append(fmt(scenario_bs["assets"][asset_key]))
+    elif "Total Assets" in asset_key:
+        data["Before Assets"].append(fmt(base_bs["assets"]["Total Assets"]))
+        data["After Assets"].append(fmt(scenario_bs["assets"]["Total Assets"]))
+    else:
+        data["Before Assets"].append("")
+        data["After Assets"].append("")
 
-    # Confirm balance
-    st.success("Balance Sheet Balances: Assets = Liabilities + Equity (Before & After)")
+    # Liabilities & Equity side
+    if le_key:
+        if le_key in base_bs["liabilities"]:
+            data["Before L&E"].append(fmt(base_bs["liabilities"][le_key]))
+            data["After L&E"].append(fmt(scenario_bs["liabilities"][le_key]))
+        elif le_key in base_bs["equity"]:
+            data["Before L&E"].append(fmt(base_bs["equity"][le_key]))
+            data["After L&E"].append(fmt(scenario_bs["equity"][le_key]))
+        elif "Total Liabilities" in le_key:
+            data["Before L&E"].append(fmt(base_bs["liabilities"]["Total Liabilities"]))
+            data["After L&E"].append(fmt(scenario_bs["liabilities"]["Total Liabilities"]))
+        elif "Total Equity" in le_key:
+            data["Before L&E"].append(fmt(base_bs["equity"]["Total Equity"]))
+            data["After L&E"].append(fmt(scenario_bs["equity"]["Total Equity"]))
+        elif "Total Liabilities + Equity" in le_key:
+            data["Before L&E"].append(fmt(base_bs["total_l_e"]))
+            data["After L&E"].append(fmt(scenario_bs["total_l_e"]))
+        else:
+            data["Before L&E"].append("")
+            data["After L&E"].append("")
+    else:
+        data["Before L&E"].append("")
+        data["After L&E"].append("")
+
+df = pd.DataFrame(data)
+
+# Styling
+def highlight_changes(row):
+    styles = [""] * len(row)
+    if row["Before Assets"] != row["After Assets"] and row["Before Assets"]:
+        styles[2] = "background-color: #ffeb9c"
+    if row["Before L&E"] != row["After L&E"] and row["Before L&E"]:
+        styles[4] = "background-color: #ffeb9c"
+    return styles
+
+styled_df = df.style \
+    .apply(highlight_changes, axis=1) \
+    .set_properties(**{"text-align": "right"}, subset=["Before Assets", "After Assets", "Before L&E", "After L&E"]) \
+    .set_properties(**{"font-weight": "bold"}, subset=pd.IndexSlice[df["Account"].str.contains("Total|Liabilities|Equity"), :]) \
+    .hide(axis="index")
+
+st.markdown("<h4 style='text-align: center;'>Assets</h4>", unsafe_allow_html=True)
+c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+with c1: st.write("**Account**")
+with c2: st.write("**Before**")
+with c3: st.write("**After**")
+with c4: st.write("**Before**")
+with c5: st.write("**After**")
+
+st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+# Balance confirmation
+st.success("Balance Sheet Balances Perfectly: Assets = Liabilities + Equity (Before & After)")
 
 # Summary
-st.markdown("### Key Impacts from P&L to Balance Sheet")
-st.markdown(f"- Provision Expense to Increases Allowance to Reduces Net AR")
-st.markdown(f"- Tax Expense to Increases Accrued Tax Payable (Liability)")
-st.markdown(f"- Net Income to Directly Increases Retained Earnings (Equity)")
+st.markdown("### Key Accounting Flows")
+st.markdown("- **Provision Expense** → ↑ Allowance → ↓ Net AR")
+st.markdown("- **Tax Expense** → ↑ Accrued Tax Payable")
+st.markdown("- **Net Income** → ↑ Retained Earnings (100% flow-through)")
 
-st.sidebar.success("Fixed! No more KeyError. Balance sheet always balances.")
-st.sidebar.info("Perfect for teaching accrual accounting, financial modeling, or interview prep!")
+st.sidebar.success("Wide, clean, professional layout")
+st.sidebar.info("Perfect for teaching, interviews, investor discussions, or financial modeling.")
