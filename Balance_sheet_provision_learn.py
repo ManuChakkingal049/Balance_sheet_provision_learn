@@ -28,8 +28,12 @@ DEFAULTS = {
 if "state" not in st.session_state:
     st.session_state.state = deepcopy(DEFAULTS)
 
+# --- Formatter ---
 def fmt(x):
-    return f"{x:,.0f}"
+    try:
+        return f"{float(x):,.0f}"
+    except (ValueError, TypeError):
+        return str(x)
 
 # --- P&L ---
 def compute_pnl(s):
@@ -173,4 +177,3 @@ st.info("""
 """)
 
 st.sidebar.success("Final Professional Version")
-
