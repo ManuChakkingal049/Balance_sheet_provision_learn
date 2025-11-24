@@ -96,9 +96,7 @@ def push_message(msg):
         st.session_state.messages = st.session_state.messages[:12]
 
 def apply_changes(new_vals):
-    s = st.session_state.state
-    old_retained = s.get("retained_earnings", 0)
-    old_bs = deepcopy(s)
+    s = deepcopy(st.session_state.state)  # Copy state to simulate 'what if'
 
     for key in new_vals:
         s[key] = float(new_vals[key])
@@ -106,18 +104,15 @@ def apply_changes(new_vals):
     new_net_income = compute_pnl(s).get("Net Income", 0)
     pnl_component = new_net_income
 
-    s["retained_earnings"] = old_retained + pnl_component
-    push_message(f"Net Income of {fmt(pnl_component)} flows fully into Retained Earnings. Total Retained Earnings: {fmt(s['retained_earnings'])}")
+    push_message(f"This shows a 'What If' scenario: if these P&L items changed, Net Income would be {fmt(new_net_income)}, flowing fully into Retained Earnings.")
 
-    st.session_state.prev = deepcopy(s)
-    st.session_state.prev_bs = old_bs
-    return pnl_component, old_retained
+    return s, pnl_component
 
 # --- UI ---------------------------------------------------------------
 st.title("Interactive P&L & Balance Sheet Explorer 📊")
-st.write("Use the sliders to change P&L items and see their effect on the Balance Sheet before and after.")
+st.write("Use the sliders to explore 'What If' scenarios. The 'Before' snapshot remains fixed; 'After' reflects the scenario based on slider changes.")
 
-st.header("Profit & Loss (Income Statement)")
+st.header("Profit & Loss (Income Statement) - Adjust 'What If')")
 with st.form(key="pnl_form"):
     slider_col1, slider_col2 = st.columns(2)
     with slider_col1:
@@ -128,51 +123,47 @@ with st.form(key="pnl_form"):
         interest = st.slider("Interest Expense", min_value=0.0, max_value=50000.0, value=st.session_state.state["interest_expense"], step=100.0)
         provision = st.slider("Provision Expense", min_value=0.0, max_value=5000.0, value=st.session_state.state["provision_expense"], step=100.0)
         tax_rate = st.slider("Tax rate", min_value=0.0, max_value=0.5, value=float(st.session_state.state["tax_rate"]), step=0.01)
-    submitted_pnl = st.form_submit_button("Apply P&L changes")
+    submitted_pnl = st.form_submit_button("Apply 'What If' Scenario")
 
-pnl_component = 0
-old_retained = 0
+# --- Prepare Before & After ---------------------------------------------
+before_assets, before_liabilities, before_equity, _, _, _ = compute_balance_sheet(st.session_state.state, pnl_component=0.0, old_retained=st.session_state.state.get('retained_earnings',0))
+
 if submitted_pnl:
-    new_vals = {"revenue": rev, "cogs": cogs, "opex": opex, "interest_expense": interest, "provision_expense": provision, "tax_rate": tax_rate}
-    pnl_component, old_retained = apply_changes(new_vals)
+    after_state, pnl_component = apply_changes({"revenue": rev, "cogs": cogs, "opex": opex, "interest_expense": interest, "provision_expense": provision, "tax_rate": tax_rate})
+    after_assets, after_liabilities, after_equity, _, _, _ = compute_balance_sheet(after_state, pnl_component, st.session_state.state.get('retained_earnings',0))
+else:
+    after_assets, after_liabilities, after_equity = before_assets, before_liabilities, before_equity
 
 # --- Display Balance Sheet Before & After --------------------------------
-st.subheader("Balance Sheet - Before & After")
-prev_assets, prev_liabilities, prev_equity, prev_total_assets, prev_total_liabilities, prev_total_equity = compute_balance_sheet(
-    st.session_state.prev_bs, old_retained=st.session_state.prev_bs.get('retained_earnings', 0), pnl_component=0
-)
-assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state, pnl_component, old_retained)
-
 col1, col2 = st.columns([1,1])
 with col1:
     st.markdown("**Assets - Before / After**")
     df_assets = pd.DataFrame({
-        "Line Item": list(assets.keys()),
-        "Before": [fmt(prev_assets.get(k,0)) for k in assets.keys()],
-        "After": [fmt(assets[k]) for k in assets.keys()]
+        "Line Item": list(before_assets.keys()),
+        "Before": [fmt(before_assets.get(k,0)) for k in before_assets.keys()],
+        "After": [fmt(after_assets[k]) for k in after_assets.keys()]
     })
     st.table(df_assets.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
 
 with col2:
     st.markdown("**Liabilities & Equity - Before / After**")
     df_eq = pd.DataFrame({
-        "Line Item": list(liabilities.keys()) + list(equity.keys()),
-        "Before": [fmt(prev_liabilities.get(k,0)) for k in liabilities.keys()] + [fmt(prev_equity.get(k,0)) for k in equity.keys()],
-        "After": [fmt(liabilities[k]) for k in liabilities.keys()] + [fmt(equity[k]) for k in equity.keys()]
+        "Line Item": list(before_liabilities.keys()) + list(before_equity.keys()),
+        "Before": [fmt(before_liabilities.get(k,0)) for k in before_liabilities.keys()] + [fmt(before_equity.get(k,0)) for k in before_equity.keys()],
+        "After": [fmt(after_liabilities[k]) for k in after_liabilities.keys()] + [fmt(after_equity[k]) for k in after_equity.keys()]
     })
     st.table(df_eq.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
 
 # --- Display P&L --------------------------------------------------------
-st.subheader("Income Statement")
-pnl = compute_pnl(st.session_state.state)
-pnl_df = pd.DataFrame(list(pnl.items()), columns=["Line", "Amount"])
+st.subheader("Income Statement (After Scenario)")
+pnl_after = compute_pnl(after_state if submitted_pnl else st.session_state.state)
+pnl_df = pd.DataFrame(list(pnl_after.items()), columns=["Line", "Amount"])
 pnl_df["Amount"] = pnl_df["Amount"].map(fmt)
 st.table(pnl_df)
 
 # Sidebar Explanation
 st.sidebar.header("Explanation")
+st.sidebar.write("The 'Before' snapshot shows current financials. Adjust the sliders to explore 'What If' scenarios. The 'After' columns reflect the impact on Net Income and Retained Earnings, illustrating how P&L changes propagate to the Balance Sheet.")
 if st.session_state.messages:
     for m in st.session_state.messages:
         st.sidebar.write(f"- {m}")
-else:
-    st.sidebar.write("Use the sliders to change P&L and see how it affects the Balance Sheet.")
