@@ -126,44 +126,48 @@ with st.form(key="pnl_form"):
     submitted_pnl = st.form_submit_button("Apply 'What If' Scenario")
 
 # --- Prepare Before & After ---------------------------------------------
-before_assets, before_liabilities, before_equity, _, _, _ = compute_balance_sheet(st.session_state.state, pnl_component=0.0, old_retained=st.session_state.state.get('retained_earnings',0))
+before_assets, before_liabilities, before_equity, before_total_assets, before_total_liabilities, before_total_equity = compute_balance_sheet(st.session_state.state, pnl_component=0.0, old_retained=st.session_state.state.get('retained_earnings',0))
 
 if submitted_pnl:
     after_state, pnl_component = apply_changes({"revenue": rev, "cogs": cogs, "opex": opex, "interest_expense": interest, "provision_expense": provision, "tax_rate": tax_rate})
-    after_assets, after_liabilities, after_equity, _, _, _ = compute_balance_sheet(after_state, pnl_component, st.session_state.state.get('retained_earnings',0))
+    after_assets, after_liabilities, after_equity, after_total_assets, after_total_liabilities, after_total_equity = compute_balance_sheet(after_state, pnl_component, st.session_state.state.get('retained_earnings',0))
 else:
     after_assets, after_liabilities, after_equity = before_assets, before_liabilities, before_equity
+    after_total_assets, after_total_liabilities, after_total_equity = before_total_assets, before_total_liabilities, before_total_equity
 
 # --- Display Balance Sheet Before & After --------------------------------
 col1, col2 = st.columns([1,1])
 with col1:
     st.markdown("**Assets - Before / After**")
     df_assets = pd.DataFrame({
-        "Line Item": list(before_assets.keys()),
-        "Before": [fmt(before_assets.get(k,0)) for k in before_assets.keys()],
-        "After": [fmt(after_assets[k]) for k in after_assets.keys()]
+        "Line Item": list(before_assets.keys()) + ["Total Assets"],
+        "Before": [fmt(before_assets.get(k,0)) for k in before_assets.keys()] + [fmt(before_total_assets)],
+        "After": [fmt(after_assets[k]) for k in after_assets.keys()] + [fmt(after_total_assets)]
     })
     st.table(df_assets.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
 
 with col2:
     st.markdown("**Liabilities & Equity - Before / After**")
     df_eq = pd.DataFrame({
-        "Line Item": list(before_liabilities.keys()) + list(before_equity.keys()),
-        "Before": [fmt(before_liabilities.get(k,0)) for k in before_liabilities.keys()] + [fmt(before_equity.get(k,0)) for k in before_equity.keys()],
-        "After": [fmt(after_liabilities[k]) for k in after_liabilities.keys()] + [fmt(after_equity[k]) for k in after_equity.keys()]
+        "Line Item": list(before_liabilities.keys()) + list(before_equity.keys()) + ["Total Liabilities + Equity"],
+        "Before": [fmt(before_liabilities.get(k,0)) for k in before_liabilities.keys()] + [fmt(before_equity.get(k,0)) for k in before_equity.keys()] + [fmt(before_total_liabilities + before_total_equity)],
+        "After": [fmt(after_liabilities[k]) for k in after_liabilities.keys()] + [fmt(after_equity[k]) for k in after_equity.keys()] + [fmt(after_total_liabilities + after_total_equity)]
     })
     st.table(df_eq.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
 
-# --- Display P&L --------------------------------------------------------
-st.subheader("Income Statement (After Scenario)")
+# --- Display P&L Before & After ----------------------------------------
+st.subheader("Income Statement - Before / After Scenario")
+pnl_before = compute_pnl(st.session_state.state)
 pnl_after = compute_pnl(after_state if submitted_pnl else st.session_state.state)
-pnl_df = pd.DataFrame(list(pnl_after.items()), columns=["Line", "Amount"])
-pnl_df["Amount"] = pnl_df["Amount"].map(fmt)
-st.table(pnl_df)
+line_items = list(pnl_before.keys())
+pnl_df = pd.DataFrame({
+    "Line Item": line_items,
+    "Before": [fmt(pnl_before[k]) for k in line_items],
+    "After": [fmt(pnl_after[k]) for k in line_items]
+})
+st.table(pnl_df.style.apply(lambda row: ['background-color: yellow' if row['Before'] != row['After'] else '' for _ in row], axis=1))
 
 # Sidebar Explanation
 st.sidebar.header("Explanation")
 st.sidebar.write("The 'Before' snapshot shows current financials. Adjust the sliders to explore 'What If' scenarios. The 'After' columns reflect the impact on Net Income and Retained Earnings, illustrating how P&L changes propagate to the Balance Sheet.")
-if st.session_state.messages:
-    for m in st.session_state.messages:
-        st.sidebar.write(f"- {m}")
+st.sidebar.write("Yellow highlights indicate line items that changed in the scenario.")
