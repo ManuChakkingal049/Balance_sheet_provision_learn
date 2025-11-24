@@ -40,8 +40,9 @@ def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
     ebt = operating_income - interest_expense
     tax = ebt * tax_rate
     net_income = ebt - tax
-    return {"Revenue": revenue, "Opex": opex, "Provision": provision,
-            "EBT": ebt, "Tax": tax, "Net Income": net_income}
+    return {"Revenue": revenue, "Opex": opex, "Interest Expense": interest_expense,
+            "Provision": provision, "EBT": ebt, "Tax": tax, "Net Income": net_income,
+            "Tax Rate": tax_rate}
 
 # -----------------------------
 # Build balance sheet
@@ -81,58 +82,100 @@ def build_bs(state, pnl):
     return {"assets": assets, "lie": lie}
 
 # -----------------------------
+# Dynamic Explanation Generator
+# -----------------------------
+def generate_dynamic_explanation(pnl_base, pnl_scn):
+    explanation = []
+    # Direction-aware wording
+    def change_word(diff):
+        return "increases" if diff > 0 else "reduces" if diff < 0 else "does not change"
+
+    # Revenue
+    diff = pnl_scn["Revenue"] - pnl_base["Revenue"]
+    explanation.append(f"- Revenue: {fmt(pnl_base['Revenue'])} → {fmt(pnl_scn['Revenue'])}, {change_word(diff)} EBT & Net Income → Retained Earnings.")
+    # Opex
+    diff = pnl_scn["Opex"] - pnl_base["Opex"]
+    explanation.append(f"- Opex: {fmt(pnl_base['Opex'])} → {fmt(pnl_scn['Opex'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
+    # Interest Expense
+    diff = pnl_scn["Interest Expense"] - pnl_base["Interest Expense"]
+    explanation.append(f"- Interest Expense: {fmt(pnl_base['Interest Expense'])} → {fmt(pnl_scn['Interest Expense'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
+    # Provision
+    diff = pnl_scn["Provision"] - pnl_base["Provision"]
+    explanation.append(f"- Provision: {fmt(pnl_base['Provision'])} → {fmt(pnl_scn['Provision'])}, {change_word(-diff)} Net Loans (asset), {change_word(-diff)} EBT & Net Income → Retained Earnings, affects Tax Payable.")
+    # Tax Rate
+    diff = pnl_scn["Tax Rate"] - pnl_base["Tax Rate"]
+    explanation.append(f"- Tax Rate: {pnl_base['Tax Rate']:.2%} → {pnl_scn['Tax Rate']:.2%}, {change_word(diff)} Tax Expense → affects Net Income & Retained Earnings.")
+
+    explanation.append("\n**Balance Sheet Impact:**")
+    explanation.append("- Assets change due to Net Loans / Allowance.")
+    explanation.append("- Liabilities change due to Tax Payable.")
+    explanation.append("- Equity changes due to Net Income / Retained Earnings.")
+    explanation.append("- Total Assets = Total Liabilities + Equity remains balanced.")
+    return "\n".join(explanation)
+
+# -----------------------------
 # UI sliders for scenario
 # -----------------------------
-st.title("Bank P&L → Balance Sheet What-If (Provision Scenario)")
+st.title("Bank P&L → Balance Sheet What-If (Full P&L Scenario)")
 
 with st.form("inputs"):
-    c1, c2 = st.columns(2)
+    st.subheader("Base Scenario P&L")
+    c1, c2, c3 = st.columns(3)
     with c1:
-        provision_base = st.slider("Base Provision", 0.0, 50_000.0, 0.0, 1_000.0)
+        revenue_base = st.slider("Revenue (Base)", 0, 300_000, 120_000, 5_000)
+        opex_base = st.slider("Opex (Base)", 0, 100_000, 25_000, 1_000)
     with c2:
-        provision_scenario = st.slider("Scenario Provision", 0.0, 50_000.0, 10_000.0, 1_000.0)
+        interest_base = st.slider("Interest Expense (Base)", 0, 20_000, 3_000, 500)
+        provision_base = st.slider("Provision (Base)", 0, 50_000, 0, 1_000)
+    with c3:
+        tax_rate_base = st.slider("Tax Rate (Base)", 0.0, 0.50, 0.25, 0.01)
+
+    st.markdown("### Scenario Scenario P&L")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        revenue_scn = st.slider("Revenue (Scenario)", 0, 300_000, 120_000, 5_000)
+        opex_scn = st.slider("Opex (Scenario)", 0, 100_000, 25_000, 1_000)
+    with c2:
+        interest_scn = st.slider("Interest Expense (Scenario)", 0, 20_000, 3_000, 500)
+        provision_scn = st.slider("Provision (Scenario)", 0, 50_000, 10_000, 1_000)
+    with c3:
+        tax_rate_scn = st.slider("Tax Rate (Scenario)", 0.0, 0.50, 0.25, 0.01)
 
     apply = st.form_submit_button("Apply Scenario", type="primary")
-
-tax_rate = st.session_state.state["tax_rate"]
-revenue = st.session_state.state["revenue"]
-cogs = st.session_state.state["cogs"]
-opex = st.session_state.state["opex"]
-interest_expense = st.session_state.state["interest_expense"]
 
 # -----------------------------
 # Compute P&L
 # -----------------------------
-pnl_base = compute_pnl(revenue, cogs, opex, interest_expense, provision_base, tax_rate)
-pnl_scenario = compute_pnl(revenue, cogs, opex, interest_expense, provision_scenario, tax_rate)
+pnl_base = compute_pnl(revenue_base, st.session_state.state["cogs"], opex_base, interest_base, provision_base, tax_rate_base)
+pnl_scn = compute_pnl(revenue_scn, st.session_state.state["cogs"], opex_scn, interest_scn, provision_scn, tax_rate_scn)
 
 # -----------------------------
 # Build balance sheets
 # -----------------------------
 bs_base = build_bs(st.session_state.state, pnl_base)
-bs_scenario = build_bs(st.session_state.state, pnl_scenario)
+bs_scn = build_bs(st.session_state.state, pnl_scn)
 
 # -----------------------------
 # P&L side-by-side table
 # -----------------------------
-def create_pnl_comparison(pnl_base, pnl_scenario):
-    items = ["Revenue","Opex","Provision","EBT","Tax","Net Income"]
+def create_pnl_comparison(pnl_base, pnl_scn):
+    items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
     data = {"Item":[], "Base":[], "Scenario":[]}
     for item in items:
         data["Item"].append(item)
         data["Base"].append(pnl_base[item])
-        data["Scenario"].append(pnl_scenario[item])
+        data["Scenario"].append(pnl_scn[item])
     df = pd.DataFrame(data)
     return df.style.format({"Base":"{0:,.0f}", "Scenario":"{0:,.0f}"}).hide(axis="index")
 
-st.markdown("### P&L Comparison – Base vs Scenario Provision")
-st.dataframe(create_pnl_comparison(pnl_base, pnl_scenario), use_container_width=True)
+st.markdown("### P&L Comparison – Base vs Scenario")
+st.dataframe(create_pnl_comparison(pnl_base, pnl_scn), use_container_width=True)
 
 # -----------------------------
 # Display retained earnings above BS
 # -----------------------------
 st.write(f"**Retained Earnings – Base:** {fmt(bs_base['lie']['Retained Earnings'])}")
-st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scenario['lie']['Retained Earnings'])}")
+st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scn['lie']['Retained Earnings'])}")
 
 # -----------------------------
 # Table builder for BS
@@ -172,26 +215,16 @@ def create_bs_table(bs_data, compare_bs=None):
 # -----------------------------
 # Display Balance Sheets
 # -----------------------------
-st.markdown("### Balance Sheet – Base Provision")
+st.markdown("### Balance Sheet – Base Scenario")
 st.dataframe(create_bs_table(bs_base), use_container_width=True)
 
-st.markdown("### Balance Sheet – Scenario Provision (Changes Highlighted)")
-st.dataframe(create_bs_table(bs_scenario, bs_base), use_container_width=True)
+st.markdown("### Balance Sheet – Scenario (Changes Highlighted)")
+st.dataframe(create_bs_table(bs_scn, bs_base), use_container_width=True)
 
 # -----------------------------
 # Dynamic Explanation
 # -----------------------------
 st.markdown("### Dynamic Explanation")
-st.markdown(f"""
-- **Provision Increase:** From {fmt(provision_base)} → {fmt(provision_scenario)}  
-  - Increases **Allowance for Loan Losses** → reduces **Net Loans** (asset side).  
-  - Reduces **EBT** → reduces **Net Income** → reduces **Retained Earnings** (equity side).  
-  - Reduces **Tax** payable as it is computed on EBT → reduces **Accrued Tax Payable** (liability side).  
-
-**Balance Sheet Impact:**  
-- Assets decrease due to higher allowance.  
-- Liabilities decrease slightly (tax), but equity decreases by net income reduction.  
-- Total Assets = Total Liabilities + Equity remains balanced.
-""")
+st.markdown(generate_dynamic_explanation(pnl_base, pnl_scn))
 
 st.success("✔ Balance sheets and P&L are correctly aligned and balanced.")
