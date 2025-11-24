@@ -173,7 +173,4 @@ st.info("""
 """)
 
 st.sidebar.success("Final Professional Version")
-st.sidebar.info("• Assets Left | L&E Right  
-• Cell-level yellow highlight  
-• Gross Loans + Allowance  
-• Always balances")
+
