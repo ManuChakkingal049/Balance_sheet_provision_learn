@@ -4,38 +4,25 @@ from copy import deepcopy
 
 st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If")
 
-# --- Initial Balanced Position (Bank-like) ---
-# Starting with a clean, balanced balance sheet - NO P&L applied yet
-# Assets: Cash 50k + Net Loans 395k (400k - 5k allowance) + PPE 30k = 475k
-# Liabilities: Deposits 300k + Debt 80k + Tax Payable 0 = 380k
-# Equity: Share Capital 50k + Retained Earnings 95k = 145k
-# Total L+E: 380k + 145k = 525k
-# Wait, that doesn't match...let me recalculate properly:
-# We need: Total Assets = Total L+E
-# Assets = 50k + 395k + 30k = 475k
-# So L+E must = 475k
-# Liabilities = 300k + 80k = 380k
-# So Equity must = 475k - 380k = 95k
-# If Share Capital = 50k, then Retained Earnings = 45k
-
+# --- Default Bank Balance Sheet (clean start) ---
 DEFAULTS = {
     "revenue": 120_000.0,           # Interest income
-    "cogs": 45_000.0,               # Interest expense / funding cost
+    "cogs": 45_000.0,               # Funding cost / Interest expense
     "opex": 25_000.0,
-    "interest_expense": 3_000.0,     # Non-interest expense
+    "interest_expense": 3_000.0,
     "tax_rate": 0.25,
-    "provision_expense": 0.0,        # Start with zero provision (no P&L impact initially)
+    "provision_expense": 0.0,       # P&L Provision
 
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
-    "allowance": 5_000.0,            # Starting allowance (already on balance sheet)
+    "allowance": 0.0,               # Starting clean
     "ppe": 30_000.0,
 
-    "deposits": 300_000.0,           # Customer deposits
+    "deposits": 300_000.0,
     "debt": 80_000.0,
-    "accrued_tax_payable": 0.0,      # No accrued tax at start
+    "accrued_tax_payable": 0.0,
     "share_capital": 50_000.0,
-    "retained_earnings": 95_000.0,   # Calculated: 475k total assets - 380k liabilities - 50k share capital = 95k
+    "retained_earnings": 0.0,       # Previous year RE = 0
 }
 
 if "state" not in st.session_state:
@@ -44,7 +31,7 @@ if "state" not in st.session_state:
 def fmt(x):
     return f"{x:,.0f}"
 
-# --- P&L ---
+# --- P&L Computation ---
 def compute_pnl(s):
     net_interest_income = s["revenue"] - s["cogs"]
     operating_income = net_interest_income - s["opex"] - s["provision_expense"]
@@ -58,27 +45,12 @@ def compute_pnl(s):
     }
 
 # --- Balance Sheet Builder ---
-def build_bs(state, pnl, base_state=None, is_base=False):
-    # For base case: use current state values as-is (no P&L impact)
-    # For scenario: start from base state, apply the P&L changes
-    
-    if is_base:
-        # Base case: just show the current balance sheet state
-        new_allowance = state["allowance"]
-        new_tax_payable = state["accrued_tax_payable"]
-        new_retained = state["retained_earnings"]
-    else:
-        # Scenario case: apply P&L impacts to the base state
-        if base_state is None:
-            base_state = state
-        
-        # Start with base allowance, add the NEW provision from scenario
-        new_allowance = base_state["allowance"] + pnl["Provision Expense"]
-        # Start with base tax payable, add the NEW tax from scenario
-        new_tax_payable = base_state["accrued_tax_payable"] + pnl["Tax Expense"]
-        # Start with base retained earnings, add the NEW net income from scenario
-        new_retained = base_state["retained_earnings"] + pnl["Net Income"]
-    
+def build_bs(state, pnl):
+    # Apply P&L impacts
+    new_allowance = state["allowance"] + pnl["Provision Expense"]
+    new_tax_payable = state["accrued_tax_payable"] + pnl["Tax Expense"]
+    new_retained = state["retained_earnings"] + pnl["Net Income"]
+
     net_loans = state["gross_loans"] - new_allowance
 
     total_assets = state["cash"] + net_loans + state["ppe"]
@@ -110,106 +82,88 @@ def build_bs(state, pnl, base_state=None, is_base=False):
 
 # --- UI ---
 st.title("Bank P&L to Balance Sheet What-If Explorer")
-st.markdown("**Adjust P&L → See instant impact on Loans, Allowance & Equity**")
+st.markdown("**Adjust P&L → See instant impact on Loans, Allowance, Tax & Equity**")
 
 with st.form("inputs"):
     st.subheader("Key P&L Adjustments (Bank Focus)")
     c1, c2, c3 = st.columns(3)
     with c1:
-        revenue = st.slider("Interest Income", 0.0, 300000.0, st.session_state.state["revenue"], 5000.0)
+        revenue = st.slider("Interest Income", 0.0, 300_000.0, st.session_state.state["revenue"], 5_000.0)
     with c2:
-        provision = st.slider("Provision for Loan Losses", 0.0, 50000.0, st.session_state.state["provision_expense"], 1000.0)
+        provision = st.slider("Provision for Loan Losses", 0.0, 50_000.0, st.session_state.state["provision_expense"], 1_000.0)
     with c3:
         tax_rate = st.slider("Tax Rate", 0.0, 0.50, st.session_state.state["tax_rate"], 0.01)
 
     apply = st.form_submit_button("Apply Scenario", type="primary", use_container_width=True)
-    
-    # Fixed values (not sliders)
-    funding_cost = st.session_state.state["cogs"]
-    opex = st.session_state.state["opex"]
-    non_interest_exp = st.session_state.state["interest_expense"]
 
-# Compute
+# --- Compute P&L ---
+temp_state = deepcopy(st.session_state.state)
+temp_state.update({
+    "revenue": revenue,
+    "provision_expense": provision,
+    "tax_rate": tax_rate
+})
+pnl = compute_pnl(temp_state)
+bs_after = build_bs(temp_state, pnl)
+
+# --- Base Balance Sheet (Before) ---
+# For before, retained earnings = 0, provision = 0, tax = 0
 base_pnl = compute_pnl(st.session_state.state)
-base_bs = build_bs(st.session_state.state, base_pnl, is_base=True)
-
-if apply:
-    temp = deepcopy(st.session_state.state)
-    temp.update({
-        "revenue": revenue, "cogs": funding_cost, "opex": opex,
-        "provision_expense": provision, "interest_expense": non_interest_exp, "tax_rate": tax_rate
-    })
-    scenario_pnl = compute_pnl(temp)
-    scenario_bs = build_bs(temp, scenario_pnl, base_state=st.session_state.state, is_base=False)
-else:
-    scenario_bs = base_bs
+bs_before = build_bs(st.session_state.state, base_pnl)
 
 # --- Table Builder ---
 def create_bs_table(bs_data, compare_bs=None):
     asset_items = [
-        ("Cash", "cash"),
-        ("Loans (net)", "loans_net"),
-        ("  ├─ Gross Loans", "gross_loans"),
-        ("  └─ Allowance for Loan Losses", "allowance"),
-        ("Property & Equipment", "ppe"),
-        ("TOTAL ASSETS", "total_assets"),
+        "Cash",
+        "Loans (net)",
+        "  ├─ Gross Loans",
+        "  └─ Allowance for Loan Losses",
+        "Property & Equipment",
+        "TOTAL ASSETS",
     ]
-    
+
     liability_items = [
-        ("Customer Deposits", "deposits"),
-        ("Debt", "debt"),
-        ("Accrued Tax Payable", "accrued_tax_payable"),
-        ("TOTAL LIABILITIES", "total_liabilities"),
-        ("", ""),
-        ("Share Capital", "share_capital"),
-        ("Retained Earnings", "retained_earnings"),
-        ("TOTAL EQUITY", "total_equity"),
-        ("TOTAL LIABILITIES + EQUITY", "total_lie"),
+        "Customer Deposits",
+        "Debt",
+        "Accrued Tax Payable",
+        "TOTAL LIABILITIES",
+        "",
+        "Share Capital",
+        "Retained Earnings",
+        "TOTAL EQUITY",
+        "TOTAL LIABILITIES + EQUITY",
     ]
 
-    # Extract values
-    def get_val(key):
-        if key in bs_data["assets"]:
-            return bs_data["assets"][key]
-        elif key in bs_data["lie"]:
-            return bs_data["lie"][key]
-        return ""
-    
-    def get_old_val(key):
-        if not compare_bs:
-            return None
-        if key in compare_bs["assets"]:
-            return compare_bs["assets"][key]
-        elif key in compare_bs["lie"]:
-            return compare_bs["lie"][key]
-        return None
-
-    # Build side-by-side table
-    max_rows = max(len(asset_items), len(liability_items))
-    
     data = {
         "Assets": [],
         "Amount": [],
         "Liabilities & Equity": [],
         "Amount ": []
     }
-    
+
+    def get_val(key):
+        return bs_data["assets"].get(key, bs_data["lie"].get(key, ""))
+
+    def get_old_val(key):
+        if not compare_bs:
+            return None
+        return compare_bs["assets"].get(key, compare_bs["lie"].get(key, None))
+
+    max_rows = max(len(asset_items), len(liability_items))
     for i in range(max_rows):
-        # Assets side
+        # Assets
         if i < len(asset_items):
-            label, key = asset_items[i]
-            data["Assets"].append(label)
-            val = get_val(label)
+            data["Assets"].append(asset_items[i])
+            val = get_val(asset_items[i])
             data["Amount"].append(fmt(val) if isinstance(val, (int, float)) else "")
         else:
             data["Assets"].append("")
             data["Amount"].append("")
-        
-        # Liabilities side
+
+        # Liabilities & Equity
         if i < len(liability_items):
-            label, key = liability_items[i]
-            data["Liabilities & Equity"].append(label)
-            val = get_val(label)
+            data["Liabilities & Equity"].append(liability_items[i])
+            val = get_val(liability_items[i])
             data["Amount "].append(fmt(val) if isinstance(val, (int, float)) else "")
         else:
             data["Liabilities & Equity"].append("")
@@ -219,29 +173,25 @@ def create_bs_table(bs_data, compare_bs=None):
 
     def style_fn(row):
         styles = [""] * len(row)
-        
-        # Check assets column
+        # Assets styling
         asset_label = row["Assets"]
-        if asset_label:
-            if "TOTAL" in asset_label:
-                styles[0] = styles[1] = "font-weight: bold; background-color: #e3f2fd"
-            elif compare_bs and asset_label in bs_data["assets"]:
-                old = get_old_val(asset_label)
-                new = bs_data["assets"][asset_label]
-                if old is not None and old != new:
-                    styles[1] = "background-color: #fff8c4; font-weight: bold"
-        
-        # Check liabilities column
+        if asset_label and "TOTAL" in asset_label:
+            styles[0] = styles[1] = "font-weight: bold; background-color: #e3f2fd"
+        elif compare_bs and asset_label:
+            old = get_old_val(asset_label)
+            new = get_val(asset_label)
+            if old is not None and old != new:
+                styles[1] = "background-color: #fff8c4; font-weight: bold"
+
+        # Liabilities styling
         lie_label = row["Liabilities & Equity"]
-        if lie_label:
-            if "TOTAL" in lie_label or "EQUITY" in lie_label:
-                styles[2] = styles[3] = "font-weight: bold; background-color: #e3f2fd"
-            elif compare_bs and lie_label in bs_data["lie"]:
-                old = get_old_val(lie_label)
-                new = bs_data["lie"][lie_label]
-                if old is not None and old != new:
-                    styles[3] = "background-color: #fff8c4; font-weight: bold"
-        
+        if lie_label and ("TOTAL" in lie_label or "EQUITY" in lie_label):
+            styles[2] = styles[3] = "font-weight: bold; background-color: #e3f2fd"
+        elif compare_bs and lie_label:
+            old = get_old_val(lie_label)
+            new = get_val(lie_label)
+            if old is not None and old != new:
+                styles[3] = "background-color: #fff8c4; font-weight: bold"
         return styles
 
     styled = df.style \
@@ -249,32 +199,31 @@ def create_bs_table(bs_data, compare_bs=None):
         .set_properties(**{"text-align": "right"}, subset=["Amount", "Amount "]) \
         .set_properties(**{"text-align": "left"}, subset=["Assets", "Liabilities & Equity"]) \
         .hide(axis="index")
-
     return styled
 
 # --- Display ---
 col1, col2 = st.columns(2)
 with col1:
-    base_balance_check = base_bs["assets"]["TOTAL ASSETS"] - base_bs["lie"]["TOTAL LIABILITIES + EQUITY"]
-    st.metric("Before: Assets = L+E?", "✓ BALANCED" if abs(base_balance_check) < 0.01 else "✗ UNBALANCED", 
-              delta=f"Diff: {base_balance_check:,.2f}" if abs(base_balance_check) > 0.01 else "Perfect")
-
+    balance_check_before = bs_before["assets"]["TOTAL ASSETS"] - bs_before["lie"]["TOTAL LIABILITIES + EQUITY"]
+    st.metric("Before: Assets = L+E?", "✓ BALANCED" if abs(balance_check_before) < 0.01 else "✗ UNBALANCED",
+              delta=f"Diff: {balance_check_before:,.2f}" if abs(balance_check_before) > 0.01 else "Perfect")
 with col2:
-    scenario_balance_check = scenario_bs["assets"]["TOTAL ASSETS"] - scenario_bs["lie"]["TOTAL LIABILITIES + EQUITY"]
-    st.metric("After: Assets = L+E?", "✓ BALANCED" if abs(scenario_balance_check) < 0.01 else "✗ UNBALANCED",
-              delta=f"Diff: {scenario_balance_check:,.2f}" if abs(scenario_balance_check) > 0.01 else "Perfect")
+    balance_check_after = bs_after["assets"]["TOTAL ASSETS"] - bs_after["lie"]["TOTAL LIABILITIES + EQUITY"]
+    st.metric("After: Assets = L+E?", "✓ BALANCED" if abs(balance_check_after) < 0.01 else "✗ UNBALANCED",
+              delta=f"Diff: {balance_check_after:,.2f}" if abs(balance_check_after) > 0.01 else "Perfect")
 
 st.markdown("### Balance Sheet – Before Scenario")
-st.dataframe(create_bs_table(base_bs), use_container_width=True)
+st.dataframe(create_bs_table(bs_before), use_container_width=True)
 
 st.markdown("### Balance Sheet – After What-If Scenario (Changes Highlighted in Yellow)")
-st.dataframe(create_bs_table(scenario_bs, base_bs), use_container_width=True)
+st.dataframe(create_bs_table(bs_after, bs_before), use_container_width=True)
 
-# Final confirmation
+st.metric("Calculated Net Income", fmt(pnl["Net Income"]))
+
 st.success("Balance Sheet Always Balances | Assets = Liabilities + Equity")
 
 st.info("""
-**Perfect Bank / Credit Model:**
+**Bank P&L → Balance Sheet Mechanics**
 - Provision → Increases Allowance → Reduces Net Loans  
 - Tax → Increases Accrued Tax Payable  
 - Net Income → Increases Retained Earnings  
