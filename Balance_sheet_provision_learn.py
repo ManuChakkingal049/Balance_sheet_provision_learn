@@ -8,20 +8,13 @@ st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If"
 # Default Bank Balance Sheet
 # -----------------------------
 DEFAULTS = {
-    "revenue": 120_000.0,
     "cogs": 45_000.0,
-    "opex": 25_000.0,
-    "interest_expense": 3_000.0,
-    "tax_rate": 0.25,
-
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
     "ppe": 30_000.0,
-
     "deposits": 300_000.0,
     "debt": 80_000.0,
     "accrued_interest_payable": 3_000.0,
-
     "share_capital": 50_000.0,
 }
 
@@ -82,29 +75,29 @@ def build_bs(state, pnl):
     return {"assets": assets, "lie": lie}
 
 # -----------------------------
-# Dynamic Explanation Generator
+# Dynamic explanation generator
 # -----------------------------
 def generate_dynamic_explanation(pnl_base, pnl_scn):
     explanation = []
-    # Direction-aware wording
     def change_word(diff):
         return "increases" if diff > 0 else "reduces" if diff < 0 else "does not change"
 
-    # Revenue
-    diff = pnl_scn["Revenue"] - pnl_base["Revenue"]
-    explanation.append(f"- Revenue: {fmt(pnl_base['Revenue'])} → {fmt(pnl_scn['Revenue'])}, {change_word(diff)} EBT & Net Income → Retained Earnings.")
-    # Opex
-    diff = pnl_scn["Opex"] - pnl_base["Opex"]
-    explanation.append(f"- Opex: {fmt(pnl_base['Opex'])} → {fmt(pnl_scn['Opex'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
-    # Interest Expense
-    diff = pnl_scn["Interest Expense"] - pnl_base["Interest Expense"]
-    explanation.append(f"- Interest Expense: {fmt(pnl_base['Interest Expense'])} → {fmt(pnl_scn['Interest Expense'])}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
-    # Provision
-    diff = pnl_scn["Provision"] - pnl_base["Provision"]
-    explanation.append(f"- Provision: {fmt(pnl_base['Provision'])} → {fmt(pnl_scn['Provision'])}, {change_word(-diff)} Net Loans (asset), {change_word(-diff)} EBT & Net Income → Retained Earnings, affects Tax Payable.")
-    # Tax Rate
-    diff = pnl_scn["Tax Rate"] - pnl_base["Tax Rate"]
-    explanation.append(f"- Tax Rate: {pnl_base['Tax Rate']:.2%} → {pnl_scn['Tax Rate']:.2%}, {change_word(diff)} Tax Expense → affects Net Income & Retained Earnings.")
+    # Items
+    for key in ["Revenue", "Opex", "Interest Expense", "Provision", "Tax Rate"]:
+        base_val = pnl_base[key] if key != "Tax Rate" else pnl_base["Tax"] / max(pnl_base["EBT"], 1e-6)
+        scn_val = pnl_scn[key] if key != "Tax Rate" else pnl_scn["Tax"] / max(pnl_scn["EBT"], 1e-6)
+        diff = scn_val - base_val
+
+        if key == "Provision":
+            explanation.append(f"- Provision: {fmt(base_val)} → {fmt(scn_val)}, {change_word(-diff)} Net Loans, EBT, Net Income → Retained Earnings & Tax Payable.")
+        elif key == "Revenue":
+            explanation.append(f"- Revenue: {fmt(base_val)} → {fmt(scn_val)}, {change_word(diff)} EBT & Net Income → Retained Earnings.")
+        elif key == "Opex":
+            explanation.append(f"- Opex: {fmt(base_val)} → {fmt(scn_val)}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
+        elif key == "Interest Expense":
+            explanation.append(f"- Interest Expense: {fmt(base_val)} → {fmt(scn_val)}, {change_word(-diff)} EBT & Net Income → Retained Earnings.")
+        elif key == "Tax Rate":
+            explanation.append(f"- Tax Rate: {base_val:.2%} → {scn_val:.2%}, {change_word(diff)} Tax Expense → Net Income & Retained Earnings.")
 
     explanation.append("\n**Balance Sheet Impact:**")
     explanation.append("- Assets change due to Net Loans / Allowance.")
@@ -114,49 +107,46 @@ def generate_dynamic_explanation(pnl_base, pnl_scn):
     return "\n".join(explanation)
 
 # -----------------------------
-# UI sliders for scenario
+# P&L sliders as vertical rows
 # -----------------------------
-st.title("Bank P&L → Balance Sheet What-If (Full P&L Scenario)")
+st.title("Bank P&L → Balance Sheet What-If (Compact P&L Sliders)")
 
-with st.form("inputs"):
-    st.subheader("Base  P&L")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        revenue_base = st.slider("Revenue (Base)", 0, 300_000, 120_000, 5_000)
-        opex_base = st.slider("Opex (Base)", 0, 100_000, 25_000, 1_000)
-    with c2:
-        interest_base = st.slider("Interest Expense (Base)", 0, 20_000, 3_000, 500)
-        provision_base = st.slider("Provision (Base)", 0, 50_000, 0, 1_000)
-    with c3:
-        tax_rate_base = st.slider("Tax Rate (Base)", 0.0, 0.50, 0.25, 0.01)
+pnl_items = ["Revenue", "Opex", "Interest Expense", "Provision", "Tax Rate"]
+ranges = {
+    "Revenue": (0, 300_000, 5_000),
+    "Opex": (0, 100_000, 1_000),
+    "Interest Expense": (0, 20_000, 500),
+    "Provision": (0, 50_000, 1_000),
+    "Tax Rate": (0.0, 0.50, 0.01)
+}
 
-    st.markdown("### Scenario  P&L")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        revenue_scn = st.slider("Revenue (Scenario)", 0, 300_000, 120_000, 5_000)
-        opex_scn = st.slider("Opex (Scenario)", 0, 100_000, 25_000, 1_000)
-    with c2:
-        interest_scn = st.slider("Interest Expense (Scenario)", 0, 20_000, 3_000, 500)
-        provision_scn = st.slider("Provision (Scenario)", 0, 50_000, 10_000, 1_000)
-    with c3:
-        tax_rate_scn = st.slider("Tax Rate (Scenario)", 0.0, 0.50, 0.25, 0.01)
+# Sliders in two columns
+cols_base = []
+cols_scn = []
 
-    apply = st.form_submit_button("Apply Scenario", type="primary")
-
-# -----------------------------
-# Compute P&L
-# -----------------------------
-pnl_base = compute_pnl(revenue_base, st.session_state.state["cogs"], opex_base, interest_base, provision_base, tax_rate_base)
-pnl_scn = compute_pnl(revenue_scn, st.session_state.state["cogs"], opex_scn, interest_scn, provision_scn, tax_rate_scn)
+st.markdown("### P&L Input Sliders")
+for item in pnl_items:
+    c1, c2 = st.columns([1,1])
+    if item != "Tax Rate":
+        base_val = c1.slider(f"{item} (Base)", *ranges[item], 0 if item=="Provision" else ranges[item][1]//2, step=ranges[item][2])
+        scn_val = c2.slider(f"{item} (Scenario)", *ranges[item], 0 if item=="Provision" else ranges[item][1]//2, step=ranges[item][2])
+    else:
+        base_val = c1.slider(f"{item} (Base)", *ranges[item], 0.25, step=ranges[item][2])
+        scn_val = c2.slider(f"{item} (Scenario)", *ranges[item], 0.25, step=ranges[item][2])
+    cols_base.append(base_val)
+    cols_scn.append(scn_val)
 
 # -----------------------------
-# Build balance sheets
+# Compute P&L and BS
 # -----------------------------
+pnl_base = compute_pnl(cols_base[0], st.session_state.state["cogs"], cols_base[1], cols_base[2], cols_base[3], cols_base[4])
+pnl_scn = compute_pnl(cols_scn[0], st.session_state.state["cogs"], cols_scn[1], cols_scn[2], cols_scn[3], cols_scn[4])
+
 bs_base = build_bs(st.session_state.state, pnl_base)
 bs_scn = build_bs(st.session_state.state, pnl_scn)
 
 # -----------------------------
-# P&L side-by-side table
+# P&L comparison table
 # -----------------------------
 def create_pnl_comparison(pnl_base, pnl_scn):
     items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
@@ -172,34 +162,25 @@ st.markdown("### P&L Comparison – Base vs Scenario")
 st.dataframe(create_pnl_comparison(pnl_base, pnl_scn), use_container_width=True)
 
 # -----------------------------
-# Display retained earnings above BS
+# Retained earnings display
 # -----------------------------
 st.write(f"**Retained Earnings – Base:** {fmt(bs_base['lie']['Retained Earnings'])}")
 st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scn['lie']['Retained Earnings'])}")
 
 # -----------------------------
-# Table builder for BS
+# BS table
 # -----------------------------
 def create_bs_table(bs_data, compare_bs=None):
     asset_items = ["Cash","Loans (net)","  ├─ Gross Loans","  └─ Allowance for Loan Losses","Property & Equipment","TOTAL ASSETS"]
     liability_items = ["Customer Deposits","Debt","Accrued Interest Payable","Accrued Tax Payable","TOTAL LIABILITIES","","Share Capital","Retained Earnings","TOTAL EQUITY","TOTAL LIABILITIES + EQUITY"]
-
     data = {"Assets":[],"Amount":[],"Liabilities & Equity":[],"Amount ":[]}
     def get_val(k): return bs_data["assets"].get(k, bs_data["lie"].get(k,""))
     def get_old_val(k): return None if compare_bs is None else compare_bs["assets"].get(k, compare_bs["lie"].get(k,None))
-
     for i in range(max(len(asset_items), len(liability_items))):
-        if i<len(asset_items):
-            label=asset_items[i]; val=get_val(label)
-            data["Assets"].append(label)
-            data["Amount"].append(fmt(val) if isinstance(val,(int,float)) else "")
+        if i<len(asset_items): label=asset_items[i]; val=get_val(label); data["Assets"].append(label); data["Amount"].append(fmt(val) if isinstance(val,(int,float)) else "")
         else: data["Assets"].append(""); data["Amount"].append("")
-        if i<len(liability_items):
-            label=liability_items[i]; val=get_val(label)
-            data["Liabilities & Equity"].append(label)
-            data["Amount "].append(fmt(val) if isinstance(val,(int,float)) else "")
+        if i<len(liability_items): label=liability_items[i]; val=get_val(label); data["Liabilities & Equity"].append(label); data["Amount "].append(fmt(val) if isinstance(val,(int,float)) else "")
         else: data["Liabilities & Equity"].append(""); data["Amount "].append("")
-
     df=pd.DataFrame(data)
     def style_fn(row):
         styles=[""]*len(row)
@@ -212,9 +193,6 @@ def create_bs_table(bs_data, compare_bs=None):
         return styles
     return df.style.apply(style_fn, axis=1).hide(axis="index")
 
-# -----------------------------
-# Display Balance Sheets
-# -----------------------------
 st.markdown("### Balance Sheet – Base Scenario")
 st.dataframe(create_bs_table(bs_base), use_container_width=True)
 
@@ -222,7 +200,7 @@ st.markdown("### Balance Sheet – Scenario (Changes Highlighted)")
 st.dataframe(create_bs_table(bs_scn, bs_base), use_container_width=True)
 
 # -----------------------------
-# Dynamic Explanation
+# Dynamic explanation
 # -----------------------------
 st.markdown("### Dynamic Explanation")
 st.markdown(generate_dynamic_explanation(pnl_base, pnl_scn))
