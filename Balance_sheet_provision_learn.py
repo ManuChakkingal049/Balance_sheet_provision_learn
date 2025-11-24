@@ -24,7 +24,10 @@ DEFAULTS = {
 
 for key in ['state', 'prev', 'messages', 'prev_bs']:
     if key not in st.session_state:
-        st.session_state[key] = deepcopy(DEFAULTS)
+        if key == 'messages':
+            st.session_state[key] = []
+        else:
+            st.session_state[key] = deepcopy(DEFAULTS)
 
 # --- Helpers ------------------------------------------------------------
 def fmt(x):
@@ -86,19 +89,21 @@ def compute_balance_sheet(s, pnl_component=0.0, old_retained=0.0):
 
 # --- Apply changes -----------------------------------------------------
 def push_message(msg):
+    if 'messages' not in st.session_state:
+        st.session_state['messages'] = []
     st.session_state.messages.insert(0, msg)
     if len(st.session_state.messages) > 12:
         st.session_state.messages = st.session_state.messages[:12]
 
 def apply_changes(new_vals):
     s = st.session_state.state
-    old_retained = s["retained_earnings"]
+    old_retained = s.get("retained_earnings", 0)
     old_bs = deepcopy(s)
 
     for key in new_vals:
         s[key] = float(new_vals[key])
 
-    new_net_income = compute_pnl(s)["Net Income"]
+    new_net_income = compute_pnl(s).get("Net Income", 0)
     pnl_component = new_net_income
 
     s["retained_earnings"] = old_retained + pnl_component
