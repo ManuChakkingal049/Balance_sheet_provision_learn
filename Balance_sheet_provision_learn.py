@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from copy import deepcopy
 
-st.set_page_config(layout="wide", page_title="Bank P&L imppact on Balance Sheet")
+st.set_page_config(layout="wide", page_title="Bank P&L impact on Balance Sheet")
 
 # -----------------------------
 # Default Bank Balance Sheet
@@ -108,7 +108,7 @@ def generate_dynamic_explanation(pnl_base, pnl_scn):
 # -----------------------------
 # Two Columns for Base and Scenario Inputs
 # -----------------------------
-st.title("Bank P&L → Balance Sheet What-If (Two Column Inputs)")
+st.title("Bank P&L impact on Balance Sheet")
 
 col_base, col_scn = st.columns(2)
 
