@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from copy import deepcopy
 
-st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If")
+st.set_page_config(layout="wide", page_title="Bank P&L imppact on Balance Sheet")
 
 # -----------------------------
 # Default Bank Balance Sheet
@@ -113,7 +113,7 @@ st.title("Bank P&L → Balance Sheet What-If (Two Column Inputs)")
 col_base, col_scn = st.columns(2)
 
 with col_base:
-    st.subheader("Base Scenario P&L")
+    st.subheader("Base P&L")
     revenue_base = st.number_input("Revenue (Base)", min_value=0, max_value=300_000, value=120_000, step=5_000)
     opex_base = st.number_input("Opex (Base)", min_value=0, max_value=100_000, value=25_000, step=1_000)
     interest_base = st.number_input("Interest Expense (Base)", min_value=0, max_value=20_000, value=3_000, step=500)
