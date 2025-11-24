@@ -6,23 +6,23 @@ st.set_page_config(layout="wide", page_title="Bank P&L to Balance Sheet What-If"
 
 # --- Initial Balanced Position (Bank-like) ---
 DEFAULTS = {
-    "revenue": 120_000.0,           # Interest income
-    "cogs": 45_000.0,               # Interest expense / funding cost
+    "revenue": 120_000.0,
+    "cogs": 45_000.0,
     "opex": 25_000.0,
-    "interest_expense": 3_000.0,     # Non-interest expense
+    "interest_expense": 3_000.0,
     "tax_rate": 0.25,
-    "provision_expense": 2_000.0,    # Loan loss provision
+    "provision_expense": 2_000.0,
 
     "cash": 50_000.0,
     "gross_loans": 400_000.0,
-    "allowance": 5_000.0,            # Starting allowance
+    "allowance": 5_000.0,
     "ppe": 30_000.0,
 
-    "deposits": 300_000.0,           # Customer deposits
+    "deposits": 300_000.0,
     "debt": 80_000.0,
     "accrued_tax_payable": 0.0,
     "share_capital": 100_000.0,
-    "retained_earnings": 70_000.0,   # Ensures balance at start
+    "retained_earnings": 70_000.0,
 }
 
 if "state" not in st.session_state:
@@ -115,61 +115,44 @@ else:
 
 # --- Table Builder ---
 def create_bs_table(bs_data, compare_bs=None):
-    lines = [
-        "Cash", "Loans (net)", "  ├─ Gross Loans", "  └─ Allowance for Loan Losses",
-        "Property & Equipment", "Total Assets", "",
-        "Customer Deposits", "Debt", "Accrued Tax Payable", "Total Liabilities", "",
-        "Share Capital", "Retained Earnings", "Total Equity", "Total Liabilities + Equity"
-    ]
+    assets_keys = list(bs_data["assets"].keys())
+    lie_keys = list(bs_data["lie"].keys())
 
-    data = {"Account": [], "Assets": [], "Liabilities & Equity": []}
-    for line in lines:
-        data["Account"].append(line)
-        if line in bs_data["assets"]:
-            val = bs_data["assets"][line]
-            data["Assets"].append(fmt(val) if isinstance(val, (int, float)) else "")
-            data["Liabilities & Equity"].append("")
-        elif line in bs_data["lie"]:
-            val = bs_data["lie"][line]
-            data["Assets"].append("")
-            data["Liabilities & Equity"].append(fmt(val) if isinstance(val, (int, float)) else "")
-        else:
-            data["Assets"].append("")
-            data["Liabilities & Equity"].append("")
+    data = {"Account": assets_keys + lie_keys, "Assets": [], "Liabilities & Equity": []}
+    for k in assets_keys:
+        data["Assets"].append(fmt(bs_data["assets"][k]))
+        data["Liabilities & Equity"].append("")
+    for k in lie_keys:
+        data["Assets"].append("")
+        data["Liabilities & Equity"].append(fmt(bs_data["lie"][k]))
 
     df = pd.DataFrame(data)
 
-    def cell_color(val, account):
-        if not compare_bs or val == "" or account == "":
+    def highlight_cells(val, account, col_type):
+        if not compare_bs:
             return ""
-        old_assets = compare_bs["assets"].get(account, "")
-        old_lie = compare_bs["lie"].get(account, "")
-        current_assets = bs_data["assets"].get(account, "")
-        current_lie = bs_data["lie"].get(account, "")
-
-        if (account in compare_bs["assets"] and old_assets != current_assets) or \
-           (account in compare_bs["lie"] and old_lie != current_lie):
+        old_val = compare_bs["assets"].get(account, compare_bs["lie"].get(account, ""))
+        current_val = bs_data["assets"].get(account, bs_data["lie"].get(account, ""))
+        if old_val != current_val and val != "":
             return "background-color: #fff8c4; font-weight: bold"
         return ""
 
     def style_fn(row):
-        styles = [""] * len(row)
+        styles = [""] * 3
         account = row["Account"]
         if "Total" in account or "Equity" in account:
-            styles = ["font-weight: bold; background-color: #e3f2fd"] * len(row)
+            styles = ["font-weight: bold; background-color: #e3f2fd"] * 3
         else:
             if row["Assets"]:
-                styles[1] = cell_color(row["Assets"], account)
+                styles[1] = highlight_cells(row["Assets"], account, "Assets")
             if row["Liabilities & Equity"]:
-                styles[2] = cell_color(row["Liabilities & Equity"], account)
+                styles[2] = highlight_cells(row["Liabilities & Equity"], account, "Liabilities & Equity")
         return styles
 
-    styled = df.style \
-        .apply(style_fn, axis=1) \
-        .set_properties(**{"text-align": "right"}, subset=["Assets", "Liabilities & Equity"]) \
-        .set_properties(**{"text-align": "left"}, subset=["Account"]) \
-        .hide(axis="index")
-
+    styled = df.style.apply(style_fn, axis=1) \
+                   .set_properties(**{"text-align": "right"}, subset=["Assets", "Liabilities & Equity"]) \
+                   .set_properties(**{"text-align": "left"}, subset=["Account"]) \
+                   .hide(axis="index")
     return styled
 
 # --- Display ---
@@ -179,7 +162,6 @@ st.dataframe(create_bs_table(base_bs), use_container_width=True)
 st.markdown("### Balance Sheet – After What-If Scenario (Changes Highlighted)")
 st.dataframe(create_bs_table(scenario_bs, base_bs), use_container_width=True)
 
-# Final confirmation
 st.success("Balance Sheet Always Balances | Assets = Liabilities + Equity")
 
 st.info("""
@@ -191,4 +173,7 @@ st.info("""
 """)
 
 st.sidebar.success("Final Professional Version")
-st.sidebar.info("• Assets Left | L&E Right\n• Cell-level yellow highlight\n• Gross Loans + Allowance\n• Always balances")
+st.sidebar.info("• Assets Left | L&E Right  
+• Cell-level yellow highlight  
+• Gross Loans + Allowance  
+• Always balances")
