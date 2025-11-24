@@ -31,16 +31,17 @@ def fmt(x):
 # -----------------------------
 # Compute P&L
 # -----------------------------
-def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
-    net_interest_income = revenue - cogs
-    operating_income = net_interest_income - opex - provision
-    ebt = operating_income - interest_expense
+def compute_pnl_fixed_income(provision, tax_rate):
+    s = st.session_state.state
+    net_interest_income = s["revenue"] - s["cogs"]
+    operating_income = net_interest_income - s["opex"] - provision
+    ebt = operating_income - s["interest_expense"]
     tax = ebt * tax_rate
     net_income = ebt - tax
     return {
-        "Revenue": revenue,
-        "Opex": opex,
-        "Interest Expense": interest_expense,
+        "Revenue": s["revenue"],
+        "Opex": s["opex"],
+        "Interest Expense": s["interest_expense"],
         "Provision": provision,
         "EBT": ebt,
         "Tax": tax,
@@ -89,7 +90,7 @@ def create_pnl_comparison(pnl_base, pnl_scn):
     items = ["Revenue","Opex","Interest Expense","Provision","EBT","Tax","Net Income"]
     data = {"Item":[], "Base":[], "Scenario":[]}
     for item in items:
-        # Determine sign relative to Revenue top-line
+        # Sign relative to Revenue top line
         if item == "Revenue":
             s_base = "(+)"
             s_scn = "(+)"
@@ -106,7 +107,7 @@ def create_pnl_comparison(pnl_base, pnl_scn):
     return df.style.hide(axis="index")
 
 # -----------------------------
-# Input sliders for Base vs Scenario
+# Input sliders for Provision & Tax Rate only
 # -----------------------------
 st.title("Bank P&L impact on Balance Sheet")
 
@@ -114,17 +115,11 @@ col_base, col_scn = st.columns(2)
 
 with col_base:
     st.subheader("Base P&L")
-    revenue_base = st.number_input("Revenue (Base)", min_value=0, max_value=300_000, value=120_000, step=5_000)
-    opex_base = st.number_input("Opex (Base)", min_value=0, max_value=100_000, value=25_000, step=1_000)
-    interest_base = st.number_input("Interest Expense (Base)", min_value=0, max_value=20_000, value=3_000, step=500)
     provision_base = st.number_input("Provision (Base)", min_value=0, max_value=50_000, value=0, step=1_000)
     tax_rate_base = st.number_input("Tax Rate (Base)", min_value=0.0, max_value=0.50, value=0.25, step=0.01, format="%.2f")
 
 with col_scn:
     st.subheader("Scenario P&L")
-    revenue_scn = st.number_input("Revenue (Scenario)", min_value=0, max_value=300_000, value=120_000, step=5_000)
-    opex_scn = st.number_input("Opex (Scenario)", min_value=0, max_value=100_000, value=25_000, step=1_000)
-    interest_scn = st.number_input("Interest Expense (Scenario)", min_value=0, max_value=20_000, value=3_000, step=500)
     provision_scn = st.number_input("Provision (Scenario)", min_value=0, max_value=50_000, value=10_000, step=1_000)
     tax_rate_scn = st.number_input("Tax Rate (Scenario)", min_value=0.0, max_value=0.50, value=0.25, step=0.01, format="%.2f")
 
@@ -133,8 +128,8 @@ apply = st.button("Apply Scenario")
 # -----------------------------
 # Compute P&L
 # -----------------------------
-pnl_base = compute_pnl(revenue_base, st.session_state.state["cogs"], opex_base, interest_base, provision_base, tax_rate_base)
-pnl_scn = compute_pnl(revenue_scn, st.session_state.state["cogs"], opex_scn, interest_scn, provision_scn, tax_rate_scn)
+pnl_base = compute_pnl_fixed_income(provision_base, tax_rate_base)
+pnl_scn = compute_pnl_fixed_income(provision_scn, tax_rate_scn)
 
 # -----------------------------
 # Build Balance Sheets
@@ -198,18 +193,16 @@ st.dataframe(create_bs_table(bs_scn, bs_base), use_container_width=True)
 # -----------------------------
 # Dynamic Explanation
 # -----------------------------
-def generate_dynamic_explanation_full(pnl_base, pnl_scn):
+def generate_dynamic_explanation_fixed_income(pnl_base, pnl_scn):
     explanation = []
     def change_word(diff):
         return "increases" if diff > 0 else "reduces" if diff < 0 else "does not change"
-    for key in ["Revenue","Opex","Interest Expense","Provision","Tax Rate"]:
-        diff = pnl_scn[key] - pnl_base[key]
-        explanation.append(f"- {key}: {fmt(pnl_base[key])} → {fmt(pnl_scn[key])}, {change_word(diff)} Net Income / Retained Earnings")
-    explanation.append("- Net Loans change due to Provision, Tax Payable changes due to Tax.")
-    explanation.append("- Total Assets = Total Liabilities + Equity remains balanced.")
+    explanation.append(f"- Provision: {fmt(pnl_base['Provision'])} → {fmt(pnl_scn['Provision'])}, {change_word(pnl_scn['Provision']-pnl_base['Provision'])} Net Loans & EBT → Retained Earnings, affects Tax Payable")
+    explanation.append(f"- Tax Rate: {pnl_base['Tax Rate']:.2%} → {pnl_scn['Tax Rate']:.2%}, {change_word(pnl_scn['Tax']-pnl_base['Tax'])} Tax → Net Income & Retained Earnings")
+    explanation.append("- Total Assets = Total Liabilities + Equity remains balanced")
     return "\n".join(explanation)
 
 st.markdown("### Dynamic Explanation")
-st.markdown(generate_dynamic_explanation_full(pnl_base, pnl_scn))
+st.markdown(generate_dynamic_explanation_fixed_income(pnl_base, pnl_scn))
 
 st.success("✔ Balance sheets and P&L are correctly aligned and balanced.")
