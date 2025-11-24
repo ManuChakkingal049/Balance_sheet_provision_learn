@@ -41,7 +41,8 @@ def compute_pnl(revenue, cogs, opex, interest_expense, provision, tax_rate):
     ebt = operating_income - interest_expense
     tax = ebt * tax_rate
     net_income = ebt - tax
-    return {"Net Income": net_income, "Provision": provision, "Tax": tax}
+    return {"Revenue": revenue, "Opex": opex, "Provision": provision,
+            "EBT": ebt, "Tax": tax, "Net Income": net_income}
 
 # -----------------------------
 # Build balance sheet
@@ -81,29 +82,30 @@ def build_bs(state, pnl):
     return {"assets": assets, "lie": lie}
 
 # -----------------------------
-# UI sliders
+# UI sliders for scenario
 # -----------------------------
 st.title("Bank P&L → Balance Sheet What-If (Provision Scenario)")
 
 with st.form("inputs"):
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        revenue = st.slider("Interest Income", 0.0, 300_000.0, st.session_state.state["revenue"], 5_000.0)
-    with c2:
         provision_base = st.slider("Base Provision", 0.0, 50_000.0, 0.0, 1_000.0)
-    with c3:
+    with c2:
         provision_scenario = st.slider("Scenario Provision", 0.0, 50_000.0, 10_000.0, 1_000.0)
-    tax_rate = st.slider("Tax Rate", 0.0, 0.5, st.session_state.state["tax_rate"], 0.01)
 
     apply = st.form_submit_button("Apply Scenario", type="primary")
+
+tax_rate = st.session_state.state["tax_rate"]
+revenue = st.session_state.state["revenue"]
+cogs = st.session_state.state["cogs"]
+opex = st.session_state.state["opex"]
+interest_expense = st.session_state.state["interest_expense"]
 
 # -----------------------------
 # Compute P&L
 # -----------------------------
-pnl_base = compute_pnl(revenue, st.session_state.state["cogs"], st.session_state.state["opex"],
-                       st.session_state.state["interest_expense"], provision_base, tax_rate)
-pnl_scenario = compute_pnl(revenue, st.session_state.state["cogs"], st.session_state.state["opex"],
-                           st.session_state.state["interest_expense"], provision_scenario, tax_rate)
+pnl_base = compute_pnl(revenue, cogs, opex, interest_expense, provision_base, tax_rate)
+pnl_scenario = compute_pnl(revenue, cogs, opex, interest_expense, provision_scenario, tax_rate)
 
 # -----------------------------
 # Build balance sheets
@@ -112,13 +114,29 @@ bs_base = build_bs(st.session_state.state, pnl_base)
 bs_scenario = build_bs(st.session_state.state, pnl_scenario)
 
 # -----------------------------
-# Display retained earnings above BS
+# Display P&L before and after
 # -----------------------------
-st.write(f"**Retained Earnings Before Scenario:** {fmt(bs_base['lie']['Retained Earnings'])}")
-st.write(f"**Retained Earnings After Scenario:** {fmt(bs_scenario['lie']['Retained Earnings'])}")
+def create_pnl_table(pnl):
+    df = pd.DataFrame({
+        "Item": ["Revenue", "Opex", "Provision", "EBT", "Tax", "Net Income"],
+        "Amount": [pnl["Revenue"], pnl["Opex"], pnl["Provision"], pnl["EBT"], pnl["Tax"], pnl["Net Income"]]
+    })
+    return df.style.format({"Amount":"{0:,.0f}"}).hide(axis="index")
+
+st.markdown("### P&L – Base Provision")
+st.dataframe(create_pnl_table(pnl_base), use_container_width=True)
+
+st.markdown("### P&L – Scenario Provision")
+st.dataframe(create_pnl_table(pnl_scenario), use_container_width=True)
 
 # -----------------------------
-# Table builder
+# Display retained earnings above BS
+# -----------------------------
+st.write(f"**Retained Earnings – Base:** {fmt(bs_base['lie']['Retained Earnings'])}")
+st.write(f"**Retained Earnings – Scenario:** {fmt(bs_scenario['lie']['Retained Earnings'])}")
+
+# -----------------------------
+# Table builder for BS
 # -----------------------------
 def create_bs_table(bs_data, compare_bs=None):
     asset_items = ["Cash","Loans (net)","  ├─ Gross Loans","  └─ Allowance for Loan Losses","Property & Equipment","TOTAL ASSETS"]
@@ -129,16 +147,14 @@ def create_bs_table(bs_data, compare_bs=None):
     def get_old_val(k): return None if compare_bs is None else compare_bs["assets"].get(k, compare_bs["lie"].get(k,None))
 
     for i in range(max(len(asset_items), len(liability_items))):
-        # assets
         if i<len(asset_items):
-            data["Assets"].append(asset_items[i])
-            val=get_val(asset_items[i])
+            label=asset_items[i]; val=get_val(label)
+            data["Assets"].append(label)
             data["Amount"].append(fmt(val) if isinstance(val,(int,float)) else "")
         else: data["Assets"].append(""); data["Amount"].append("")
-        # liabilities
         if i<len(liability_items):
-            data["Liabilities & Equity"].append(liability_items[i])
-            val=get_val(liability_items[i])
+            label=liability_items[i]; val=get_val(label)
+            data["Liabilities & Equity"].append(label)
             data["Amount "].append(fmt(val) if isinstance(val,(int,float)) else "")
         else: data["Liabilities & Equity"].append(""); data["Amount "].append("")
 
@@ -155,12 +171,12 @@ def create_bs_table(bs_data, compare_bs=None):
     return df.style.apply(style_fn, axis=1).hide(axis="index")
 
 # -----------------------------
-# Display
+# Display Balance Sheets
 # -----------------------------
 st.markdown("### Balance Sheet – Base Provision")
 st.dataframe(create_bs_table(bs_base), use_container_width=True)
 
-st.markdown("### Balance Sheet – Scenario Provision (Changes Highlighted)")
+st.markdown("### Balance Sheet – Scenario Provision")
 st.dataframe(create_bs_table(bs_scenario, bs_base), use_container_width=True)
 
-st.success("✔ Balance sheets are balanced in both cases (before and after provision).")
+st.success("✔ Balance sheets balance in both cases.")
