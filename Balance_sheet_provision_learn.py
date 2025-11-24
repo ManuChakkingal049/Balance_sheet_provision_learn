@@ -6,46 +6,49 @@ st.set_page_config(layout="wide", page_title="P&L & Balance Sheet Interactive Ex
 
 # --- Helpers and defaults -------------------------------------------------
 DEFAULTS = {
-    # P&L
     "revenue": 100000.0,
     "cogs": 40000.0,
     "opex": 20000.0,
     "interest_expense": 2000.0,
     "tax_rate": 0.20,
-    # Balance sheet
     "cash": 20000.0,
     "accounts_receivable": 15000.0,
     "inventory": 10000.0,
     "ppe": 30000.0,
-    "allowance_for_doubtful_accounts": 500.0,  # contra-asset (provision)
+    "allowance_for_doubtful_accounts": 500.0,
     "accounts_payable": 8000.0,
     "debt": 10000.0,
     "share_capital": 30000.0,
-    # retained earnings will be calculated from historical net income
     "retained_earnings": 12000.0,
 }
 
-if "state" not in st.session_state:
+# Initialize session state safely
+if 'state' not in st.session_state:
     st.session_state.state = deepcopy(DEFAULTS)
+if 'prev' not in st.session_state:
     st.session_state.prev = deepcopy(DEFAULTS)
+if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# Utility for formatting
+# --- Helpers ---------------------------------------------------------------
 def fmt(x):
-    return f"{x:,.2f}"
+    try:
+        return f"{float(x):,.2f}"
+    except:
+        return str(x)
 
 # --- Accounting logic -----------------------------------------------------
-
 def compute_pnl(s):
-    revenue = s["revenue"]
-    cogs = s["cogs"]
+    revenue = float(s.get("revenue", 0))
+    cogs = float(s.get("cogs", 0))
     gross_profit = revenue - cogs
-    opex = s["opex"]
-    provision_expense = s["allowance_for_doubtful_accounts"]  # automatically included
+    opex = float(s.get("opex", 0))
+    provision_expense = float(s.get("allowance_for_doubtful_accounts", 0))
     ebit = gross_profit - opex - provision_expense
-    interest = s["interest_expense"]
+    interest = float(s.get("interest_expense", 0))
     ebt = ebit - interest
-    tax = max(0.0, ebt) * s["tax_rate"]
+    tax_rate = float(s.get("tax_rate", 0))
+    tax = max(0.0, ebt) * tax_rate
     net_income = ebt - tax
     return {
         "Revenue": revenue,
@@ -60,86 +63,145 @@ def compute_pnl(s):
         "Net Income": net_income,
     }
 
-
 def compute_balance_sheet(s, include_retained=True):
-    # Assets
     assets = {
-        "Cash": s["cash"],
-        "Accounts Receivable (gross)": s["accounts_receivable"],
-        "Less: Allowance for Doubtful Accounts": -s["allowance_for_doubtful_accounts"],
-        "Inventory": s["inventory"],
-        "PPE (net)": s["ppe"],
+        "Cash": float(s.get("cash", 0)),
+        "Accounts Receivable (gross)": float(s.get("accounts_receivable", 0)),
+        "Less: Allowance for Doubtful Accounts": -float(s.get("allowance_for_doubtful_accounts", 0)),
+        "Inventory": float(s.get("inventory", 0)),
+        "PPE (net)": float(s.get("ppe", 0)),
     }
     total_assets = sum(assets.values())
 
-    # Liabilities
     liabilities = {
-        "Accounts Payable": s["accounts_payable"],
-        "Debt": s["debt"],
+        "Accounts Payable": float(s.get("accounts_payable", 0)),
+        "Debt": float(s.get("debt", 0)),
     }
     total_liabilities = sum(liabilities.values())
 
-    # Equity
-    retained = s["retained_earnings"] if include_retained else 0.0
+    retained = float(s.get("retained_earnings", 0)) if include_retained else 0.0
     equity = {
-        "Share Capital": s["share_capital"],
+        "Share Capital": float(s.get("share_capital", 0)),
         "Retained Earnings": retained,
     }
     total_equity = sum(equity.values())
 
     return assets, liabilities, equity, total_assets, total_liabilities, total_equity
 
-
 def balance_sheet_gap(s):
     _, _, _, total_assets, total_liabilities, total_equity = compute_balance_sheet(s)
     return total_assets - (total_liabilities + total_equity)
 
-# --- Interaction: when user updates values --------------------------------
-
+# --- Apply changes --------------------------------------------------------
 def push_message(msg):
     st.session_state.messages.insert(0, msg)
     if len(st.session_state.messages) > 12:
         st.session_state.messages = st.session_state.messages[:12]
 
-
 def apply_changes(new_vals, auto_balance_cash=True):
-    prev = st.session_state.prev
     s = st.session_state.state
+    prev = st.session_state.prev
 
-    # Update provision first (Allowance affects P&L and Assets automatically)
-    delta_allowance = new_vals["allowance_for_doubtful_accounts"] - prev["allowance_for_doubtful_accounts"]
+    # Update provision automatically
+    delta_allowance = float(new_vals.get("allowance_for_doubtful_accounts", 0)) - float(prev.get("allowance_for_doubtful_accounts", 0))
     if abs(delta_allowance) > 0.005:
-        s["allowance_for_doubtful_accounts"] = new_vals["allowance_for_doubtful_accounts"]
-        push_message(f"Provision (Allowance for Doubtful Accounts) changed by {fmt(delta_allowance)}. Automatically affects P&L (Provision Expense) and reduces Net Income and Equity.")
+        s["allowance_for_doubtful_accounts"] = float(new_vals["allowance_for_doubtful_accounts"])
+        push_message(f"Provision changed by {fmt(delta_allowance)}. Automatically affects P&L and Equity.")
 
-    # Update other P&L items
-    s["revenue"] = new_vals["revenue"]
-    s["cogs"] = new_vals["cogs"]
-    s["opex"] = new_vals["opex"]
-    s["interest_expense"] = new_vals["interest_expense"]
-    s["tax_rate"] = new_vals["tax_rate"]
+    # Update other P&L and balance sheet items
+    for key in ["revenue", "cogs", "opex", "interest_expense", "tax_rate",
+                "cash", "accounts_receivable", "inventory", "ppe",
+                "accounts_payable", "debt", "share_capital"]:
+        s[key] = float(new_vals.get(key, s.get(key, 0)))
 
-    # Compute new Net Income automatically
-    pnl_before = compute_pnl(prev)["Net Income"]
-    pnl_after = compute_pnl(s)["Net Income"]
+    # Recompute Net Income and update Retained Earnings
+    pnl_before = compute_pnl(prev).get("Net Income", 0)
+    pnl_after = compute_pnl(s).get("Net Income", 0)
     delta_net_income = pnl_after - pnl_before
     if abs(delta_net_income) > 0.005:
         s["retained_earnings"] += delta_net_income
-        push_message(f"Net Income changed by {fmt(delta_net_income)}. Retained Earnings (Equity) updated automatically.")
+        push_message(f"Net Income changed by {fmt(delta_net_income)}. Retained Earnings updated automatically.")
 
-    # Update Balance Sheet items
-    s["accounts_receivable"] = new_vals["accounts_receivable"]
-    s["inventory"] = new_vals["inventory"]
-    s["ppe"] = new_vals["ppe"]
-    s["accounts_payable"] = new_vals["accounts_payable"]
-    s["debt"] = new_vals["debt"]
-    s["share_capital"] = new_vals["share_capital"]
-    s["cash"] = new_vals["cash"]
-
-    # Auto-balance by adjusting Cash if needed
+    # Auto-balance Cash
     gap = balance_sheet_gap(s)
     if auto_balance_cash and abs(gap) > 0.005:
         s["cash"] -= gap
-        push_message(f"Auto-balancing: Cash adjusted by {-gap:,.2f} to maintain Assets = Liabilities + Equity.")
+        push_message(f"Auto-balancing: Cash adjusted by {-gap:,.2f} to maintain balance.")
 
     st.session_state.prev = deepcopy(s)
+
+# --- UI -------------------------------------------------------------------
+st.title("Interactive P&L & Balance Sheet Explorer 📊")
+st.write("Learn how the income statement and balance sheet connect. Edit values and watch the effects flow through.")
+
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.header("Profit & Loss (Income Statement)")
+    with st.form(key="pnl_form"):
+        rev = st.number_input("Revenue", value=st.session_state.state["revenue"], format="%.2f")
+        cogs = st.number_input("COGS", value=st.session_state.state["cogs"], format="%.2f")
+        opex = st.number_input("Operating Expenses", value=st.session_state.state["opex"], format="%.2f")
+        interest = st.number_input("Interest Expense", value=st.session_state.state["interest_expense"], format="%.2f")
+        tax_rate = st.slider("Tax rate", min_value=0.0, max_value=0.5, value=float(st.session_state.state["tax_rate"]), step=0.01)
+        submitted_pnl = st.form_submit_button("Apply P&L changes")
+
+with col2:
+    st.header("Balance Sheet")
+    with st.form(key="bs_form"):
+        cash = st.number_input("Cash", value=st.session_state.state["cash"], format="%.2f")
+        ar = st.number_input("Accounts Receivable", value=st.session_state.state["accounts_receivable"], format="%.2f")
+        allowance = st.number_input("Allowance for Doubtful Accounts", value=st.session_state.state["allowance_for_doubtful_accounts"], format="%.2f")
+        inv = st.number_input("Inventory", value=st.session_state.state["inventory"], format="%.2f")
+        ppe = st.number_input("PPE (net)", value=st.session_state.state["ppe"], format="%.2f")
+        ap = st.number_input("Accounts Payable", value=st.session_state.state["accounts_payable"], format="%.2f")
+        debt = st.number_input("Debt", value=st.session_state.state["debt"], format="%.2f")
+        share_cap = st.number_input("Share Capital", value=st.session_state.state["share_capital"], format="%.2f")
+        auto_balance = st.checkbox("Auto-balance balance sheet by adjusting Cash", value=True)
+        submitted_bs = st.form_submit_button("Apply Balance Sheet changes")
+
+if submitted_pnl or submitted_bs:
+    new_vals = {
+        "revenue": rev, "cogs": cogs, "opex": opex, "interest_expense": interest, "tax_rate": tax_rate,
+        "cash": cash, "accounts_receivable": ar, "allowance_for_doubtful_accounts": allowance,
+        "inventory": inv, "ppe": ppe, "accounts_payable": ap, "debt": debt, "share_capital": share_cap
+    }
+    apply_changes(new_vals, auto_balance_cash=auto_balance)
+
+# Display P&L and Balance Sheet
+pnl = compute_pnl(st.session_state.state)
+assets, liabilities, equity, total_assets, total_liabilities, total_equity = compute_balance_sheet(st.session_state.state)
+
+col3, col4 = st.columns([1,1])
+with col3:
+    st.subheader("Calculated Income Statement")
+    pnl_df = pd.DataFrame(list(pnl.items()), columns=["Line", "Amount"])
+    pnl_df["Amount"] = pnl_df["Amount"].map(fmt)
+    st.table(pnl_df)
+
+with col4:
+    st.subheader("Calculated Balance Sheet")
+    left = pd.DataFrame(list(assets.items()), columns=["Assets", "Amount"])
+    right = pd.DataFrame(list(liabilities.items()) + list(equity.items()), columns=["Liabilities & Equity", "Amount"])
+    left["Amount"] = left["Amount"].map(fmt)
+    right["Amount"] = right["Amount"].map(fmt)
+    st.markdown(f"**Total Assets:** {fmt(total_assets)}  \\ **Total Liabilities:** {fmt(total_liabilities)}  \\ **Total Equity:** {fmt(total_equity)}")
+    st.write("Assets")
+    st.table(left)
+    st.write("Liabilities & Equity")
+    st.table(right)
+
+# Balance check
+gap = balance_sheet_gap(st.session_state.state)
+if abs(gap) < 0.01:
+    st.success("Balance Sheet balances: Assets = Liabilities + Equity")
+else:
+    st.error(f"Balance Sheet does NOT balance. Gap = {fmt(gap)}")
+
+# Sidebar explanations
+st.sidebar.header("Explanations & Teaching Hints")
+if st.session_state.messages:
+    for m in st.session_state.messages:
+        st.sidebar.write(f"- {m}")
+else:
+    st.sidebar.write("Make a change to see teaching messages appear here.")
